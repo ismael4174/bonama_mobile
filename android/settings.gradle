@@ -4,3 +4,9 @@ extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autoli
 rootProject.name = 'Bonamas'
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')
+include ':react-native-html-to-pdf'
+project(':react-native-html-to-pdf').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-html-to-pdf/android')
+include ':react-native-share'
+project(':react-native-share').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-share/android')
+
+

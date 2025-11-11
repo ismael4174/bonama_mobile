@@ -11,7 +11,9 @@ import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
 import com.facebook.soloader.SoLoader
-
+import com.christopherdro.htmltopdf.RNHTMLtoPDFPackage
+import cl.json.RNSharePackage
+import cl.json.ShareApplication
 class MainApplication : Application(), ReactApplication {
 
   override val reactNativeHost: ReactNativeHost =
@@ -20,6 +22,9 @@ class MainApplication : Application(), ReactApplication {
             PackageList(this).packages.apply {
               // Packages that cannot be autolinked yet can be added manually here, for example:
               // add(MyReactNativePackage())
+
+              add(RNHTMLtoPDFPackage()) // Ajout de react-native-html-to-pdf
+              add(RNSharePackage()) // Ajout de react-native-share
             }
 
         override fun getJSMainModuleName(): String = "index"
@@ -41,4 +46,6 @@ class MainApplication : Application(), ReactApplication {
       load()
     }
   }
+
+  
 }
