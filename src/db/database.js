@@ -2642,11 +2642,16 @@ CREATE TABLE IF NOT EXISTS transferts (
 };
 
 // Initialisation des données pour un établissement
-const initializeDataEtab = async (idetablissement, anneeScolaireId) => {
+const initializeDataEtab = async (idetablissement, anneeScolaireId, force = false) => {
   const initialized = await AsyncStorage.getItem('etabDataInitialized');
-  if (initialized === 'true') {
+  if (initialized === 'true' && !force) {
     console.log('ℹ️ Données établissement déjà initialisées.');
     return;
+  }
+
+  if (force) {
+    console.log('♻️ Forçage de l’initialisation établissement.');
+    await AsyncStorage.removeItem('etabDataInitialized');
   }
 
   const tables = [
@@ -2858,7 +2863,6 @@ const initializeDataDrena = async (idDrena, anneeScolaireId, force = false) => {
       name: 'etablissementannees',
       url: monurl + `etablissementannees/drena/${idDrena}/${anneeScolaireId}`,
     },
-    {name: 'classes', url: monurl + `classes/drena/${idDrena}`},
     {name: 'ues', url: monurl + `ues/drena/${idDrena}`},
     {
       name: 'uesannees',
@@ -2872,7 +2876,6 @@ const initializeDataDrena = async (idDrena, anneeScolaireId, force = false) => {
       name: 'elevesinscrits',
       url: monurl + `elevesinscrits/drena/${idDrena}/${anneeScolaireId}`,
     },
-    {name: 'manuels', url: monurl + `manuels/drena/${idDrena}`},
     {name: 'stockmanuels', url: monurl + `stockmanuels/drena/${idDrena}`},
     {
       name: 'manuelseleves',
@@ -2887,10 +2890,9 @@ const initializeDataDrena = async (idDrena, anneeScolaireId, force = false) => {
       url: monurl + `commandesues/drena/${idDrena}/${anneeScolaireId}`,
     },
     {
-      name: 'detailscommandesues',
+      name: 'detailscommandeues',
       url: monurl + `detailscommandes/drena/${idDrena}/${anneeScolaireId}`,
     },
-    {name: 'colis', url: monurl + `colis/drena/${idDrena}`},
     {name: 'transferts', url: monurl + `transferts/drena/${idDrena}`},
     {
       name: 'detailstransferts',
@@ -3002,7 +3004,7 @@ async function initializeDatabase() {
 }
 */
 /* ça fonctionne bien sauf drenas
-async function initializeDatabase(userType, userId, anneeId) {
+async function initializeDatabase(userType, userId, anneeId, force = false) {
   console.log('🚀 Initialisation de la base locale...');
 
   try {
@@ -3017,9 +3019,9 @@ async function initializeDatabase(userType, userId, anneeId) {
 
     // 4️⃣ Charger les données spécifiques selon le type d'utilisateur
     if (userType === 'etab') {
-      await initializeDataEtab(userId, anneeId);
+      await initializeDataEtab(userId, anneeId, force);
     } else if (userType === 'drena') {
-      await initializeDataDrena(userId, anneeId);
+      await initializeDataDrena(userId, anneeId, force);
     }
 
     console.log('🎉 Initialisation terminée !');
@@ -3029,7 +3031,7 @@ async function initializeDatabase(userType, userId, anneeId) {
 }
 */
 
-async function initializeDatabase(userType, userId, anneeId) {
+async function initializeDatabase(userType, userId, anneeId, force = false) {
   console.log('🚀 Initialisation de la base locale...');
 
   try {
@@ -3049,9 +3051,9 @@ async function initializeDatabase(userType, userId, anneeId) {
 
     // 4️⃣ Charger les données spécifiques selon le type d'utilisateur
     if (userType === 'etab') {
-      await initializeDataEtab(userId, anneeId);
+      await initializeDataEtab(userId, anneeId, force);
     } else if (userType === 'drena') {
-      await initializeDataDrena(userId, anneeId);
+      await initializeDataDrena(userId, anneeId, force);
     }
 
     console.log('🎉 Initialisation terminée !');

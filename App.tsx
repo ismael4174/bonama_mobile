@@ -91,10 +91,13 @@ const CustomDrawerContent1 = ({navigation}) => {
         title="Paramètres généraux"
         onPress={() => navigation.navigate('Paramètres généraux')}
       />
+      {/** Transferts de manuels (désactivé) */}
+      {/**
       <Button
         title="Transferts de manuels"
         onPress={() => navigation.navigate('Transferts de manuels')}
       />
+      */}
       <Button
         title="Liste des manuels"
         onPress={() => navigation.navigate('Liste des manuels')}
@@ -150,6 +153,7 @@ const CustomDrawerContent = ({navigation}) => {
 function DrawerScreens1({navigation}) {
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const anneeId = useAnneescolairesID();
   ///////////////////////////////
   const handleInitialize = async () => {
     if (isInitialized) {
@@ -167,11 +171,8 @@ function DrawerScreens1({navigation}) {
       const madrenaId = await AsyncStorage.getItem('drenas_id');
       const drenaId = madrenaId ? parseInt(madrenaId, 10) : null;
 
-      // If you have an initializeData function in your database.js file, call it here:
-      // await initializeData();  // Uncomment if needed
-      //await initializeData();
-      await initializeDatabase();
-      await initializeDataDrena(drenaId, useAnneescolairesID);
+      // Initialisation complète basée sur l'utilisateur connecté (DRENA)
+      await initializeDatabase('drena', drenaId, anneeId, true);
       Alert.alert('Succès', 'Initialisation des données terminée.');
       setIsInitialized(true);
     } catch (error) {
@@ -207,10 +208,13 @@ function DrawerScreens1({navigation}) {
           name="Paramètres généraux"
           component={ParametresStack1}
         />
+        {/** Transferts de manuels (désactivé) */}
+        {/**
         <Drawer.Screen
           name="Transferts de manuels"
           component={TransfertStack1}
         />
+        */}
         <Drawer.Screen name="Liste des manuels" component={ManuelRetrouve1} />
         <Drawer.Screen name="Souscriptions" component={SouscripteursStack1} />
         <Drawer.Screen name="Recap Etab" component={EtablissementchoisiStack} />
@@ -221,6 +225,7 @@ function DrawerScreens1({navigation}) {
 function DrawerScreens({navigation}) {
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const anneeId = useAnneescolairesID();
   ///////////////////////////////
   const handleInitialize = async () => {
     if (isInitialized) {
@@ -236,18 +241,14 @@ function DrawerScreens({navigation}) {
         return;
       }
 
-      // If you have an initializeData function in your database.js file, call it here:
-      // await initializeData();  // Uncomment if needed
-
       const monEtablissementId = await AsyncStorage.getItem(
         'etablissements_id',
       );
       const etablissementId = monEtablissementId
         ? parseInt(monEtablissementId, 10)
         : null;
-      //await initializeData();
-      await initializeDatabase();
-      await initializeDataEtab(etablissementId, useAnneescolairesID);
+      // Initialisation complète basée sur l'utilisateur connecté (Etablissement)
+      await initializeDatabase('etab', etablissementId, anneeId, true);
       Alert.alert('Succès', 'Initialisation des données terminée.');
       setIsInitialized(true);
     } catch (error) {

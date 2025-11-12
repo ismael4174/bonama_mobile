@@ -343,7 +343,7 @@ const ManuelRetrouve1 = () => {
         data={data.filter(item =>
           item.referenceexemplaire.toLowerCase().includes(search.toLowerCase()),
         )}
-        keyExtractor={item => item.id.toString()}
+        keyExtractor={item => `${item.id}-${item.referenceexemplaire}`}
         renderItem={({item}) => {
           const findLabel = (list, id, key) =>
             list.find(el => el.id === id)?.[key] || 'Inconnu';

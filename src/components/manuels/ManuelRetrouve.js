@@ -340,7 +340,7 @@ const ManuelRetrouve = () => {
 
       <FlatList
         data={data.filter(item => item.referenceexemplaire.includes(search))}
-        keyExtractor={item => item.id.toString()}
+        keyExtractor={item => `${item.id}-${item.referenceexemplaire}`}
         renderItem={({item}) => {
           const {
             referenceexemplaire,

@@ -181,7 +181,7 @@ const StockManuels = () => {
       />*/}
       <FlatList
         data={data.filter(item => item.referenceexemplaire.includes(search))}
-        keyExtractor={item => item.id.toString()}
+        keyExtractor={(item, index) => `${item.id}-${index}`}
         renderItem={({item}) => {
           // Trouver le libellé du manuel correspondant
           const monetablissement = etablissements.find(

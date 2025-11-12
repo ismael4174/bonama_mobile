@@ -83,18 +83,8 @@ const CeInscrits1 = () => {
   }, [fetchCommandes]);
 
   const handleSearch = useCallback(text => {
+    // Ne pas requêter la DB: on filtre uniquement sur les CE déjà listés (portée utilisateur)
     setSearchText(text);
-    const query =
-      text.trim() !== ''
-        ? `SELECT commandesues.* FROM commandesues 
-           JOIN ues ON ues.id = commandesues.ues_id 
-           JOIN anneescolaires ON anneescolaires.id = commandesues.anneescolaires_id 
-           WHERE LOWER(ues.denominationue) LIKE LOWER(?) OR LOWER(anneescolaires.libelleanneescolaire) LIKE LOWER(?)`
-        : `SELECT * FROM commandesues`;
-    const params = text.trim() !== '' ? [`%${text}%`, `%${text}%`] : [];
-    db.transaction(tx => {
-      tx.executeSql(query, params, (_, {rows}) => setCommandes(rows.raw()));
-    });
   }, []);
 
   const handleSave = useCallback(() => {
@@ -208,6 +198,17 @@ const CeInscrits1 = () => {
     }));
   }, [commandes, ueselect, anneescolaire]);
 
+  const filteredCommandes = useMemo(() => {
+    const list = memoizedCommandes;
+    const q = (searchText || '').trim().toLowerCase();
+    if (!q) return list;
+    return list.filter(
+      c =>
+        (c.ues_name || '').toLowerCase().includes(q) ||
+        (c.anneescolaire_name || '').toLowerCase().includes(q),
+    );
+  }, [memoizedCommandes, searchText]);
+
   return (
     <View style={{flex: 1}}>
       {/* Nombre total CE */}
@@ -232,7 +233,7 @@ const CeInscrits1 = () => {
 
       <FlatList
         style={{flex: 1}}
-        data={memoizedCommandes}
+        data={filteredCommandes}
         keyExtractor={item => item.id.toString()}
         initialNumToRender={10}
         windowSize={21}
