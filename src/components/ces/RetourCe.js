@@ -1,14 +1,6 @@
 import React, {useState, useEffect, useCallback, useMemo} from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Modal,
-  TextInput,
-  Button,
-} from 'react-native';
+import {View, Text, FlatList, TouchableOpacity, StyleSheet, Modal} from 'react-native';
+import {TextInput as PaperTextInput, List, Divider, Button as PaperButton} from 'react-native-paper';
 import uuid from 'react-native-uuid';
 import RNHTMLtoPDF from 'react-native-html-to-pdf';
 import RNFS from 'react-native-fs';
@@ -498,59 +490,53 @@ const CeInscrits = ({navigation}) => {
 
   return (
     <View style={styles.container}>
-      <TextInput
+      <PaperTextInput
+        mode="outlined"
         style={styles.searchInput}
         placeholder="Recherche rapide"
-        placeholderTextColor="black"
         value={searchText}
         onChangeText={handleSearch}
+        left={<PaperTextInput.Icon icon="magnify" />}
       />
 
       <FlatList
         data={memoizedCommandes}
         keyExtractor={item => item.id.toString()}
         contentContainerStyle={styles.listContent}
+        ItemSeparatorComponent={Divider}
         renderItem={({item}) => (
-          <View style={styles.card}>
-            <Text style={styles.title}>CE : {item.ues_name}</Text>
-
-            {item.details.map(detail => (
-              <View key={detail.id} style={styles.detailBlock}>
-                <Text style={styles.detailText}>
-                  Manuel : {manuel(detail.manuels_id)}
-                </Text>
-                <Text style={styles.detailText}>
-                  Quantité : {detail.nombremanuel}
-                </Text>
+          <List.Item
+            title={`CE: ${item.ues_name}`}
+            titleNumberOfLines={3}
+            titleEllipsizeMode="tail"
+            description={() => (
+              <View>
+                {item.details.map((detail, idx) => (
+                  <View key={`${item.id}-${idx}`} style={styles.detailBlock}>
+                    <Text style={styles.detailText}>Manuel: {manuel(detail.manuels_id)}</Text>
+                    <Text style={styles.detailText}>Quantité: {detail.nombremanuel}</Text>
+                  </View>
+                ))}
               </View>
-            ))}
-
-            <View style={styles.actions}>
-              {item.retouruefinalise === 0 ? (
-                <TouchableOpacity
-                  onPress={() => {
-                    handleEditerRetour(item);
-                    navigation.navigate('RetourCeDetails', {
-                      commandeId: item.id,
-                    });
-                  }}
-                  style={styles.buttonBlue}>
-                  <Text style={styles.buttonText}>Éditer</Text>
-                </TouchableOpacity>
-              ) : (
-                <>
-                  <TouchableOpacity style={styles.buttonRed}>
-                    <Text style={styles.buttonText}>Déjà finalisée</Text>
-                  </TouchableOpacity>
-                  {/* <TouchableOpacity
-                    onPress={() => handleTelechargerPDF(item)}
-                    style={styles.buttonBlue}>
-                    <Text style={styles.buttonText}>Reçu</Text>
-                  </TouchableOpacity> */}
-                </>
-              )}
-            </View>
-          </View>
+            )}
+            left={props => <List.Icon {...props} icon="account-group" />}
+            right={props => (
+              <View style={{justifyContent: 'center'}}>
+                {item.retouruefinalise === 0 ? (
+                  <PaperButton
+                    mode="contained"
+                    onPress={() => {
+                      handleEditerRetour(item);
+                      navigation.navigate('RetourCeDetails', {commandeId: item.id});
+                    }}>
+                    Éditer
+                  </PaperButton>
+                ) : (
+                  <PaperButton mode="contained" disabled>Déjà finalisée</PaperButton>
+                )}
+              </View>
+            )}
+          />
         )}
       />
 
@@ -582,7 +568,8 @@ const CeInscrits = ({navigation}) => {
               valueKey="value"
             />
 
-            <TextInput
+            <PaperTextInput
+              mode="outlined"
               placeholder="Nombre total de manuels"
               value={nombretotalmanuel}
               onChangeText={setNombretotalmanuel}
@@ -609,14 +596,13 @@ const CeInscrits = ({navigation}) => {
                     valueKey="value"
                   />
 
-                  <TextInput
+                  <PaperTextInput
+                    mode="outlined"
                     style={styles.quantityInput}
                     placeholder="Quantité"
                     keyboardType="numeric"
-                    value={item.nombremanuel.toString()}
-                    onChangeText={text =>
-                      handleDetailChange(index, 'nombremanuel', text)
-                    }
+                    value={String(item.nombremanuel)}
+                    onChangeText={text => handleDetailChange(index, 'nombremanuel', text)}
                   />
 
                   <TouchableOpacity onPress={() => handleDeleteDetail(index)}>
@@ -626,9 +612,11 @@ const CeInscrits = ({navigation}) => {
               )}
             />
 
-            <Button title="Ajouter un détail" onPress={handleAddDetail} />
-            <Button title="Enregistrer" onPress={handleSave} />
-            <Button title="Annuler" onPress={closeModal} />
+            <PaperButton onPress={handleAddDetail}>Ajouter un détail</PaperButton>
+            <PaperButton mode="contained" onPress={handleSave} style={{marginTop: 8}}>
+              Enregistrer
+            </PaperButton>
+            <PaperButton style={{marginTop: 8}} onPress={closeModal}>Annuler</PaperButton>
           </View>
         </View>
       </Modal>

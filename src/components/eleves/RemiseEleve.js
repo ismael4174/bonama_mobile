@@ -1,14 +1,6 @@
 import React, {useEffect, useState, useCallback} from 'react';
-import {
-  View,
-  Image,
-  Text,
-  FlatList,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  Modal,
-} from 'react-native';
+import {View, Image, Text, FlatList, StyleSheet, TouchableOpacity, Modal} from 'react-native';
+import {TextInput as PaperTextInput, List, Divider, Button as PaperButton} from 'react-native-paper';
 import RNHTMLtoPDF from 'react-native-html-to-pdf';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
@@ -445,93 +437,49 @@ const ElevesInscrits = ({navigation}) => {
   }, []);
   return (
     <View style={styles.container}>
-      <TextInput
+      <PaperTextInput
+        mode="outlined"
         style={styles.searchInput}
         placeholder="Rechercher par nom, matricule ou prénom"
         value={searchText}
         onChangeText={setSearchText}
-        placeholderTextColor="black"
+        left={<PaperTextInput.Icon icon="magnify" />}
       />
       <FlatList
         data={eleves}
         keyExtractor={item => item.id.toString()}
+        ItemSeparatorComponent={Divider}
         renderItem={({item}) => (
-          <View style={styles.card}>
-            {/* <Text style={styles.text}>
-              <Text style={styles.bold}>ElevesInscritId :</Text> {item.id}
-            </Text>*/}
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Élève :</Text> {item.eleve}
-            </Text>
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Classe :</Text> {item.classe}
-            </Text>
-            {/* <Text style={styles.text}>
-              <Text style={styles.bold}>Établissement :</Text>{' '}
-              {item.etablissement}
-            </Text>
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Année :</Text> {item.annee_scolaire}
-            </Text>
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Pénalité :</Text> {item.penalite} FCFA
-            </Text>
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Presouscrit :</Text>{' '}
-              {item.presouscrit ? 'Oui' : 'Non'}
-            </Text>*/}
-            <View style={styles.actions}>
-              {item.remisefinalise === 1 ? (
-                <>
-                  <TouchableOpacity style={styles.redButton}>
-                    <Text style={styles.whiteText}>Déjà finalisée</Text>
-                  </TouchableOpacity>
-                  {/* <TouchableOpacity
-                    onPress={() => handleTelechargerPDF(item)}
-                    style={styles.blueButton}>
-                    <Text style={styles.whiteText}>Reçu</Text>
-                  </TouchableOpacity> */}
-                  {/* <TouchableOpacity
-                    onPress={() => {
-                      //handleEditerRemise(item);
+          <List.Item
+            title={item.eleve}
+            titleNumberOfLines={3}
+            titleEllipsizeMode="tail"
+            description={() => (
+              <View>
+                <Text style={styles.text}>Classe: {item.classe}</Text>
+              </View>
+            )}
+            left={props => <List.Icon {...props} icon="account" />}
+            right={props => (
+              <View style={{justifyContent: 'center'}}>
+                {item.remisefinalise === 1 ? (
+                  <PaperButton mode="contained" disabled>
+                    Déjà finalisée
+                  </PaperButton>
+                ) : (
+                  <PaperButton
+                    mode="contained"
+                    onPress={() =>
                       navigation.navigate('RemiseEleveDetails', {
                         eleveInscritId: item.id,
-                      }); // 123 est l'ID de la commande
-                    }}
-                    // onPress={() => handleEditerRemise(item)}
-                    style={styles.blueButton}>
-                    <Text style={styles.whiteText}>Editer</Text>
-                  </TouchableOpacity>*/}
-                </>
-              ) : (
-                <>
-                  {/*<TouchableOpacity
-                    onPress={() => {
-                      handleFinaliserRemise(item);
-                      navigation.navigate('RemiseEleveDetails', {
-                        eleveInscritId: item.id,
-                      });
-                    }}
-                    style={styles.blueButton}>
-                    <Text style={styles.whiteText}>Finaliser</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.blueButton}>
-                    <Text style={styles.whiteText}>Non disponible</Text>
-                  </TouchableOpacity>*/}
-                  <TouchableOpacity
-                    onPress={() => {
-                      //  handleEditerRemise(item);
-                      navigation.navigate('RemiseEleveDetails', {
-                        eleveInscritId: item.id,
-                      });
-                    }}
-                    style={styles.blueButton}>
-                    <Text style={styles.whiteText}>Editer</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          </View>
+                      })
+                    }>
+                    Editer
+                  </PaperButton>
+                )}
+              </View>
+            )}
+          />
         )}
       />
       <Modal
@@ -560,15 +508,7 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: '#f5f5f5',
   },
-  searchInput: {
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
-    marginBottom: 10,
-    paddingHorizontal: 8,
-    borderRadius: 5,
-    color: 'black',
-  },
+  
   card: {
     backgroundColor: '#fff',
     padding: 15,

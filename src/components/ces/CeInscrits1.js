@@ -1,14 +1,9 @@
 import React, {useState, useEffect, useCallback, useMemo} from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Modal,
-  TextInput,
-  Button,
-} from 'react-native';
+import {View, Text, FlatList, TouchableOpacity, StyleSheet, Modal} from 'react-native';
+import {TextInput as PaperTextInput, List, Divider, Button as PaperButton} from 'react-native-paper';
+import EmptyState from '../ui/EmptyState';
+import LoadingState from '../ui/LoadingState';
+import ErrorState from '../ui/ErrorState';
 import uuid from 'react-native-uuid';
 import {db} from '../../db/database';
 import CustomPicker from '../CustomPicker';
@@ -17,6 +12,8 @@ import useDrenaId from '../../parametres/drena.js';
 
 const CeInscrits1 = () => {
   const [commandes, setCommandes] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedCommande, setSelectedCommande] = useState(null);
   const [uesId, setUesId] = useState(null);
@@ -41,7 +38,9 @@ const CeInscrits1 = () => {
 
   // Chargement des commandes et références
   const fetchCommandes = useCallback(() => {
-    if (!drenasID || !anneescolairesID) return;
+    setError('');
+    setLoading(true);
+    if (!drenasID || !anneescolairesID) return; 
     db.transaction(tx => {
       tx.executeSql(
         `SELECT commandesues.*, details.* 
@@ -63,6 +62,15 @@ const CeInscrits1 = () => {
             commandesMap[row.id].details.push(row);
           });
           setCommandes(commandesList);
+          setLoading(false);
+        },
+        (_, error) => {
+          console.error(
+            'Erreur lors de la récupération des commandes et détails :',
+            error,
+          );
+          setError('Impossible de charger les souscriptions CE.');
+          setLoading(false);
         },
       );
     });
@@ -83,7 +91,6 @@ const CeInscrits1 = () => {
   }, [fetchCommandes]);
 
   const handleSearch = useCallback(text => {
-    // Ne pas requêter la DB: on filtre uniquement sur les CE déjà listés (portée utilisateur)
     setSearchText(text);
   }, []);
 
@@ -211,141 +218,160 @@ const CeInscrits1 = () => {
 
   return (
     <View style={{flex: 1}}>
-      {/* Nombre total CE */}
-      <View style={styles.totalContainer}>
-        <Text style={styles.totalText}>
-          {memoizedCommandes.length} CE{memoizedCommandes.length > 1 ? 's' : ''}{' '}
-          trouv{memoizedCommandes.length > 1 ? 'és' : 'é'}
-        </Text>
-      </View>
-
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Recherche rapide"
-        value={searchText}
-        onChangeText={handleSearch}
-        placeholderTextColor="black"
-      />
-      <Button
-        title="Ajouter une commande"
-        onPress={() => setModalVisible(true)}
-      />
-
-      <FlatList
-        style={{flex: 1}}
-        data={filteredCommandes}
-        keyExtractor={item => item.id.toString()}
-        initialNumToRender={10}
-        windowSize={21}
-        renderItem={({item}) => (
-          <View style={styles.card}>
-            <Text style={styles.title}>CE: {item.ues_name}</Text>
-            <Text style={styles.title}>
-              Année scolaire: {item.anneescolaire_name}
+      {loading ? (
+        <LoadingState label="Chargement des souscriptions CE..." />
+      ) : error ? (
+        <ErrorState
+          subtitle={error}
+          onAction={() => {
+            setError('');
+            fetchCommandes();
+          }}
+        />
+      ) : (
+        <>
+          {/* Nombre total CE */}
+          <View style={styles.totalContainer}>
+            <Text style={styles.totalText}>
+              {memoizedCommandes.length} CE{memoizedCommandes.length > 1 ? 's' : ''}{' '}
+              trouv{memoizedCommandes.length > 1 ? 'és' : 'é'}
             </Text>
-            <Text style={styles.title}>Détails des manuels:</Text>
-            <FlatList
-              data={item.details}
-              keyExtractor={d => d.id.toString()}
-              renderItem={({item: d}) => (
-                <View>
-                  <Text style={styles.title}>
-                    Manuel: {manuel(d.manuels_id)}
-                  </Text>
-                  <Text style={styles.title}>Quantité: {d.nombremanuel}</Text>
-                </View>
-              )}
-              initialNumToRender={5}
-              windowSize={11}
-            />
-            <View style={styles.actions}>
-              <TouchableOpacity onPress={() => handleEdit(item)}>
-                <Text style={{fontSize: 20}}>✏️</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleDelete(item.id)}>
-                <Text style={{fontSize: 20}}>🗑️</Text>
-              </TouchableOpacity>
-            </View>
           </View>
-        )}
-      />
 
-      <Modal
-        visible={modalVisible}
-        onRequestClose={closeModal}
-        transparent
-        animationType="slide">
-        <View style={styles.modalContainer}>
-          <View style={styles.modal}>
-            <FlatList
-              data={details}
-              keyExtractor={(_, index) => index.toString()}
-              renderItem={({item, index}) => (
-                <View style={styles.detailContainer}>
-                  <CustomPicker
-                    items={manuels.map(manuel => ({
-                      label: manuel.titre,
-                      value: manuel.id,
-                    }))}
-                    selectedId={item.manuels_id}
-                    onValueChange={v =>
-                      handleDetailChange(index, 'manuels_id', v)
-                    }
-                    displayKey="label"
-                    valueKey="value"
-                  />
-                  <View style={styles.inputContainer}>
-                    <TextInput
-                      placeholder="Quantité"
-                      value={item.nombremanuel.toString()}
-                      onChangeText={t =>
-                        handleDetailChange(index, 'nombremanuel', t)
-                      }
-                      keyboardType="numeric"
+          <PaperTextInput
+            mode="outlined"
+            style={styles.searchInput}
+            placeholder="Recherche rapide"
+            value={searchText}
+            onChangeText={handleSearch}
+            left={<PaperTextInput.Icon icon="magnify" />}
+          />
+          <PaperButton mode="contained" onPress={() => setModalVisible(true)}>
+            Ajouter une commande
+          </PaperButton>
+
+          <FlatList
+            style={{flex: 1}}
+            data={filteredCommandes}
+            keyExtractor={item => item.id.toString()}
+            initialNumToRender={10}
+            windowSize={21}
+            ItemSeparatorComponent={Divider}
+            ListEmptyComponent={<EmptyState title="Aucune commande" subtitle="Aucune souscription CE trouvée" />}
+            renderItem={({item}) => (
+              <List.Item
+                title={`CE: ${item.ues_name}`}
+                titleNumberOfLines={3}
+                titleEllipsizeMode="tail"
+                description={() => (
+                  <View>
+                    <Text style={styles.desc}>Année scolaire: {item.anneescolaire_name}</Text>
+                    <Text style={styles.desc}>Détails des manuels:</Text>
+                    <FlatList
+                      data={item.details}
+                      keyExtractor={d => d.id.toString()}
+                      renderItem={({item: d}) => (
+                        <View>
+                          <Text style={styles.desc}>Manuel: {manuel(d.manuels_id)}</Text>
+                          <Text style={styles.desc}>Quantité: {d.nombremanuel}</Text>
+                        </View>
+                      )}
+                      initialNumToRender={5}
+                      windowSize={11}
                     />
                   </View>
-                  <TouchableOpacity onPress={() => handleDeleteDetail(index)}>
-                    <Text style={{fontSize: 18}}>❌</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-              ListHeaderComponent={
-                <Button title="Ajouter un détail" onPress={handleAddDetail} />
-              }
-              ListFooterComponent={
-                <>
-                  <Button title="Enregistrer" onPress={handleSave} />
-                  <Button title="Annuler" onPress={closeModal} />
-                </>
-              }
-              keyboardShouldPersistTaps="handled"
-            />
-          </View>
-        </View>
-      </Modal>
+                )}
+                left={props => <List.Icon {...props} icon="account-group" />}
+                right={props => (
+                  <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                    <TouchableOpacity onPress={() => handleEdit(item)} style={{paddingHorizontal: 8}}>
+                      <Text style={{fontSize: 18}}>✏️</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleDelete(item.id)} style={{paddingHorizontal: 8}}>
+                      <Text style={{fontSize: 18}}>🗑️</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              />
+            )}
+          />
+
+          <Modal
+            visible={modalVisible}
+            onRequestClose={closeModal}
+            transparent
+            animationType="slide">
+            <View style={styles.modalContainer}>
+              <View style={styles.modal}>
+                <FlatList
+                  data={details}
+                  keyExtractor={(_, index) => index.toString()}
+                  renderItem={({item, index}) => (
+                    <View style={styles.detailContainer}>
+                      <CustomPicker
+                        items={manuels.map(manuel => ({
+                          label: manuel.titre,
+                          value: manuel.id,
+                        }))}
+                        selectedId={item.manuels_id}
+                        onValueChange={v =>
+                          handleDetailChange(index, 'manuels_id', v)
+                        }
+                        displayKey="label"
+                        valueKey="value"
+                      />
+                      <View style={styles.inputContainer}>
+                        <PaperTextInput
+                          mode="outlined"
+                          placeholder="Quantité"
+                          value={item.nombremanuel.toString()}
+                          onChangeText={t =>
+                            handleDetailChange(index, 'nombremanuel', t)
+                          }
+                          keyboardType="numeric"
+                          style={{marginBottom: 8}}
+                        />
+                      </View>
+                      <TouchableOpacity onPress={() => handleDeleteDetail(index)}>
+                        <Text style={{fontSize: 18}}>❌</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                  ListHeaderComponent={
+                    <PaperButton mode="outlined" onPress={handleAddDetail}>
+                      Ajouter un détail
+                    </PaperButton>
+                  }
+                  ListFooterComponent={
+                    <>
+                      <PaperButton mode="contained" onPress={handleSave}>
+                        Enregistrer
+                      </PaperButton>
+                      <PaperButton style={{marginTop: 8}} onPress={closeModal}>
+                        Annuler
+                      </PaperButton>
+                    </>
+                  }
+                  keyboardShouldPersistTaps="handled"
+                />
+              </View>
+            </View>
+          </Modal>
+        </>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {padding: 10, flex: 1},
-  inputContainer: {
-    borderColor: 'gray',
-    borderWidth: 1,
-    borderRadius: 5,
-    paddingHorizontal: 8,
-    marginBottom: 8,
-  },
+  
   searchInput: {
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
     marginBottom: 10,
-    paddingHorizontal: 8,
-    color: 'black',
   },
   card: {padding: 15, margin: 10, backgroundColor: '#eee', borderRadius: 10},
   title: {fontSize: 18, fontWeight: 'bold'},
+  desc: {fontSize: 14, marginTop: 2},
   actions: {flexDirection: 'row', justifyContent: 'space-between'},
   modalContainer: {
     flex: 1,

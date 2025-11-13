@@ -1,15 +1,6 @@
 import React, {useState, useEffect} from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  TextInput,
-  StyleSheet,
-  Modal,
-  Button,
-  Alert,
-} from 'react-native';
+import {View, Text, FlatList, TouchableOpacity, StyleSheet, Modal, Alert} from 'react-native';
+import {TextInput as PaperTextInput, Button as PaperButton} from 'react-native-paper';
 import uuid from 'react-native-uuid';
 import {db} from '../../db/database';
 import CustomPicker from '../CustomPicker';
@@ -250,20 +241,22 @@ const ManuelEleves = ({navigation, route}) => {
       <FlatList
         ListHeaderComponent={
           <View style={{backgroundColor: '#fff'}}>
-            <TextInput
+            <PaperTextInput
+              mode="outlined"
               placeholder="Rechercher..."
               value={search}
               onChangeText={setSearch}
               style={styles.searchInput}
-              placeholderTextColor="black"
+              left={<PaperTextInput.Icon icon="magnify" />}
             />
 
-            <Button title="Précédent" onPress={() => navigation.goBack()} />
+            <PaperButton style={{marginTop: 8}} onPress={() => navigation.goBack()}>
+              Précédent
+            </PaperButton>
 
-            <Button
-              title="Finaliser cette remise"
-              onPress={handleFinaliserRemise}
-            />
+            <PaperButton mode="contained" style={{marginTop: 8}} onPress={handleFinaliserRemise}>
+              Finaliser cette remise
+            </PaperButton>
 
             {eleve && (
               <View style={styles.eleveCard}>
@@ -380,8 +373,12 @@ const ManuelEleves = ({navigation, route}) => {
                 setFormData({...formData, etatmanuelsremiseeleve_id: value})
               }
             />
-            <Button title="Enregistrer" onPress={handleSave} />
-            <Button title="Annuler" onPress={() => setModalVisible(false)} />
+            <PaperButton mode="contained" onPress={handleSave}>
+              Enregistrer
+            </PaperButton>
+            <PaperButton style={{marginTop: 8}} onPress={() => setModalVisible(false)}>
+              Annuler
+            </PaperButton>
           </View>
         </View>
       </Modal>

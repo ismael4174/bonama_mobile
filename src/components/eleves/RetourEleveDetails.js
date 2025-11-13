@@ -1,16 +1,6 @@
 import React, {useState, useEffect} from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  TextInput,
-  StyleSheet,
-  Modal,
-  Switch,
-  Button,
-  Alert,
-} from 'react-native';
+import {View, Text, FlatList, TouchableOpacity, StyleSheet, Modal, Switch, Alert} from 'react-native';
+import {TextInput as PaperTextInput, Button as PaperButton} from 'react-native-paper';
 import {db} from '../../db/database';
 import uuid from 'react-native-uuid';
 import CustomPicker from '../CustomPicker';
@@ -271,23 +261,23 @@ const ManuelEleves = ({navigation, route}) => {
       {/* Boutons */}
       <View style={styles.buttonGroup}>
         <View style={styles.buttonWrapper}>
-          <Button title="Retour" onPress={() => navigation.goBack()} />
+          <PaperButton onPress={() => navigation.goBack()}>Retour</PaperButton>
         </View>
         <View style={styles.buttonWrapper}>
-          <Button
-            title="Finaliser ce retour de manuels"
-            onPress={handleFinaliserRetour}
-          />
+          <PaperButton mode="contained" onPress={handleFinaliserRetour}>
+            Finaliser ce retour de manuels
+          </PaperButton>
         </View>
       </View>
 
       {/* Recherche */}
-      <TextInput
+      <PaperTextInput
+        mode="outlined"
         placeholder="Rechercher..."
         value={search}
         onChangeText={setSearch}
-        placeholderTextColor="black"
         style={styles.searchInput}
+        left={<PaperTextInput.Icon icon="magnify" />}
       />
 
       {/* Nom élève */}
@@ -451,8 +441,12 @@ const ManuelEleves = ({navigation, route}) => {
               />
             </View>
 
-            <Button title="Enregistrer" onPress={handleSave} />
-            <Button title="Annuler" onPress={() => setModalVisible(false)} />
+            <PaperButton mode="contained" onPress={handleSave}>
+              Enregistrer
+            </PaperButton>
+            <PaperButton style={{marginTop: 8}} onPress={() => setModalVisible(false)}>
+              Annuler
+            </PaperButton>
           </View>
         </View>
       </Modal>

@@ -1,15 +1,9 @@
 import React, {useState, useEffect} from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Button,
-  Modal,
-  Alert,
-} from 'react-native';
+import {View, Text, FlatList, TouchableOpacity, StyleSheet, Button, Modal, Alert} from 'react-native';
+import {TextInput as PaperTextInput, List, Divider, Button as PaperButton} from 'react-native-paper';
+import EmptyState from '../ui/EmptyState';
+import LoadingState from '../ui/LoadingState';
+import ErrorState from '../ui/ErrorState';
 import SQLite from 'react-native-sqlite-storage';
 import axios from 'axios';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -37,6 +31,8 @@ const ManuelRetrouve = () => {
   const [etatmanuel, setEtatmanuel] = useState('');
   const [statuts, setStatuts] = useState([]);
   const [etatmanuels, setEtatmanuels] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   //const anneescolairesID = parseInt(UseAnneescolairesID(), 10);
   const etablissementsID = parseInt(useEtablissementId(), 10);
@@ -159,15 +155,29 @@ const ManuelRetrouve = () => {
   }, []);
 
   const fetchData = () => {
-    db.transaction(tx => {
-      tx.executeSql(
-        'SELECT * FROM stockmanuels WHERE etablissements_id = ?',
-        [etablissementsID],
-        (_, {rows}) => {
-          setData(rows.raw());
-        },
-      );
-    });
+    setError('');
+    setLoading(true);
+    db.transaction(
+      tx => {
+        tx.executeSql(
+          'SELECT * FROM stockmanuels WHERE etablissements_id = ?',
+          [etablissementsID],
+          (_, {rows}) => {
+            setData(rows.raw());
+            setLoading(false);
+          },
+          (_, err) => {
+            setError('Impossible de charger les manuels retrouvés.');
+            setLoading(false);
+            return false;
+          },
+        );
+      },
+      err => {
+        setError('Erreur de transaction lors du chargement.');
+        setLoading(false);
+      },
+    );
   };
   const addOrUpdateItem = () => {
     db.transaction(tx => {
@@ -330,17 +340,28 @@ const ManuelRetrouve = () => {
 
   return (
     <View style={styles.container}>
-      <TextInput
+      {loading ? (
+        <LoadingState label="Chargement des manuels retrouvés..." />
+      ) : error ? (
+        <ErrorState subtitle={error} onAction={fetchData} />
+      ) : (
+        <>
+      <PaperTextInput
+        mode="outlined"
         placeholder="Rechercher..."
         value={search}
         onChangeText={setSearch}
-        placeholderTextColor="black"
+        left={<PaperTextInput.Icon icon="magnify" />}
         style={styles.searchInput}
+        accessibilityLabel="Recherche"
+        accessibilityHint="Filtrer la liste des manuels"
       />
 
       <FlatList
         data={data.filter(item => item.referenceexemplaire.includes(search))}
         keyExtractor={item => `${item.id}-${item.referenceexemplaire}`}
+        ItemSeparatorComponent={Divider}
+        ListEmptyComponent={<EmptyState title="Aucun manuel retrouvé" subtitle="Ajustez la recherche pour voir des résultats" />}
         renderItem={({item}) => {
           const {
             referenceexemplaire,
@@ -364,22 +385,33 @@ const ManuelRetrouve = () => {
             'Inconnu';
 
           return (
-            <View style={styles.card}>
-              <Text style={styles.title}>Manuel : {libelleManuel}</Text>
-              <Text style={styles.title}>Ref : {referenceexemplaire}</Text>
-              <Text style={styles.title}>Statut : {libellestatut}</Text>
-              <Text style={styles.title}>État : {libelleetatmanuel}</Text>
-
-              <View style={styles.actions}>
+            <List.Item
+              title={`Manuel: ${libelleManuel}`}
+              titleNumberOfLines={3}
+              titleEllipsizeMode="tail"
+              description={() => (
+                <View>
+                  <Text style={styles.desc}>Ref: {referenceexemplaire}</Text>
+                  <Text style={styles.desc}>Statut: {libellestatut}</Text>
+                  <Text style={styles.desc}>État: {libelleetatmanuel}</Text>
+                </View>
+              )}
+              left={props => <List.Icon {...props} icon="book" />}
+              right={props => (
                 <TouchableOpacity
                   onPress={() => {
                     setCurrentItem(item);
                     setModalVisible(true);
-                  }}>
+                  }}
+                  style={{paddingHorizontal: 12, justifyContent: 'center'}}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Modifier le manuel ${libelleManuel}, référence ${referenceexemplaire}`}
+                  hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
                   <Text style={styles.editIcon}>✏️</Text>
                 </TouchableOpacity>
-              </View>
-            </View>
+              )}
+              accessibilityLabel={`Manuel ${libelleManuel}, référence ${referenceexemplaire}, statut ${libellestatut}, état ${libelleetatmanuel}`}
+            />
           );
         }}
       />
@@ -399,13 +431,14 @@ const ManuelRetrouve = () => {
           />
 
           <Text>Référence :</Text>
-          <TextInput
+          <PaperTextInput
+            mode="outlined"
             placeholder="Référence"
             value={currentItem?.referenceexemplaire || ''}
             onChangeText={text =>
               setCurrentItem(prev => ({...prev, referenceexemplaire: text}))
             }
-            style={styles.input}
+            style={{marginBottom: 8}}
           />
 
           <Text>Statut :</Text>
@@ -437,21 +470,23 @@ const ManuelRetrouve = () => {
             {currentItem?.manuelseleves?.map((eleve, i) => (
               <View key={i} style={styles.subCard}>
                 <Text>Manuel ID :</Text>
-                <TextInput
+                <PaperTextInput
+                  mode="outlined"
                   value={eleve.manuels_id?.toString() || ''}
                   onChangeText={text =>
                     handleManuelEleveChange(i, 'manuels_id', text)
                   }
                   keyboardType="numeric"
-                  style={styles.input}
+                  style={{marginBottom: 8}}
                 />
                 <Text>Couverture :</Text>
-                <TextInput
+                <PaperTextInput
+                  mode="outlined"
                   value={eleve.couverture || ''}
                   onChangeText={text =>
                     handleManuelEleveChange(i, 'couverture', text)
                   }
-                  style={styles.input}
+                  style={{marginBottom: 8}}
                 />
               </View>
             ))}
@@ -462,30 +497,34 @@ const ManuelRetrouve = () => {
             {currentItem?.manuelsues?.map((ues, i) => (
               <View key={i} style={styles.subCard}>
                 <Text>Commandes UES ID :</Text>
-                <TextInput
+                <PaperTextInput
+                  mode="outlined"
                   value={ues.commandesues_id?.toString() || ''}
                   onChangeText={text =>
                     handleManuelUesChange(i, 'commandesues_id', text)
                   }
                   keyboardType="numeric"
-                  style={styles.input}
+                  style={{marginBottom: 8}}
                 />
                 <Text>Manuel ID :</Text>
-                <TextInput
+                <PaperTextInput
+                  mode="outlined"
                   value={ues.manuels_id?.toString() || ''}
                   onChangeText={text =>
                     handleManuelUesChange(i, 'manuels_id', text)
                   }
                   keyboardType="numeric"
-                  style={styles.input}
+                  style={{marginBottom: 8}}
                 />
               </View>
             ))}
           </View>
 
-          <Button title="RETOUR" onPress={() => setModalVisible(false)} />
+          <PaperButton onPress={() => setModalVisible(false)}>RETOUR</PaperButton>
         </View>
       </Modal>
+      </>
+      )}
     </View>
   );
 };
@@ -494,13 +533,7 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   searchInput: {
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
     marginBottom: 10,
-    paddingHorizontal: 10,
-    color: 'black',
-    borderRadius: 5,
   },
   card: {
     padding: 15,
@@ -513,6 +546,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 4,
   },
+  desc: {fontSize: 14, marginTop: 2},
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',

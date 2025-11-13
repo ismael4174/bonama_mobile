@@ -1,15 +1,6 @@
 import React, {useState, useEffect} from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  TextInput,
-  StyleSheet,
-  Modal,
-  Button,
-  Alert,
-} from 'react-native';
+import {View, Text, FlatList, TouchableOpacity, StyleSheet, Modal, Alert} from 'react-native';
+import {TextInput as PaperTextInput, Button as PaperButton} from 'react-native-paper';
 import uuid from 'react-native-uuid';
 import {db} from '../../db/database';
 import CustomPicker from '../CustomPicker';
@@ -173,14 +164,17 @@ const ManuelElevesUES = ({navigation, route}) => {
 
   return (
     <View style={styles.container}>
-      <Button title="Précédent" onPress={() => navigation.goBack()} />
-      <Button title="Finaliser cette remise" onPress={handleFinaliserRemise} />
-      <TextInput
+      <PaperButton onPress={() => navigation.goBack()}>Précédent</PaperButton>
+      <PaperButton mode="contained" onPress={handleFinaliserRemise} style={{marginTop: 8}}>
+        Finaliser cette remise
+      </PaperButton>
+      <PaperTextInput
+        mode="outlined"
         placeholder="Rechercher..."
         value={search}
         onChangeText={setSearch}
-        placeholderTextColor="black"
         style={styles.searchInput}
+        left={<PaperTextInput.Icon icon="magnify" />}
       />
 
       <FlatList
@@ -271,8 +265,12 @@ const ManuelElevesUES = ({navigation, route}) => {
                 setEditingManuel({...editingManuel, etatmanuelsalaremise_id: v})
               }
             />
-            <Button title="Enregistrer" onPress={handleSave} />
-            <Button title="Annuler" onPress={() => setModalVisible(false)} />
+            <PaperButton mode="contained" onPress={handleSave}>
+              Enregistrer
+            </PaperButton>
+            <PaperButton style={{marginTop: 8}} onPress={() => setModalVisible(false)}>
+              Annuler
+            </PaperButton>
           </View>
         </View>
       </Modal>

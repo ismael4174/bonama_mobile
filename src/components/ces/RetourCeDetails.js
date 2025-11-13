@@ -1,16 +1,6 @@
 import React, {useState, useEffect} from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Modal,
-  Switch,
-  Button,
-  Alert,
-} from 'react-native';
+import {View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, Modal, Switch, Alert} from 'react-native';
+import {TextInput as PaperTextInput, Button as PaperButton} from 'react-native-paper';
 import uuid from 'react-native-uuid';
 
 import SQLite from 'react-native-sqlite-storage';
@@ -418,20 +408,18 @@ const ManuelsUES = ({navigation, route}) => {
 
   return (
     <View style={styles.container}>
-      <Button
-        title="Retour"
-        onPress={() => {
-          navigation.goBack();
-        }}
-      />
-      <Button title="Finaliser ce retour" onPress={handleFinaliserRetour} />
+      <PaperButton onPress={() => navigation.goBack()}>Retour</PaperButton>
+      <PaperButton mode="contained" onPress={handleFinaliserRetour} style={{marginTop: 8}}>
+        Finaliser ce retour
+      </PaperButton>
 
-      <TextInput
+      <PaperTextInput
+        mode="outlined"
         placeholder="Rechercher..."
         value={search}
         onChangeText={setSearch}
-        placeholderTextColor="black"
         style={styles.searchInput}
+        left={<PaperTextInput.Icon icon="magnify" />}
       />
 
       <FlatList
@@ -672,94 +660,16 @@ const ManuelsUES = ({navigation, route}) => {
               />
             </View>
 
-            <Button title="Enregistrer" onPress={handleSave} />
-            <Button title="Annuler" onPress={() => setModalVisible(false)} />
+            <PaperButton mode="contained" onPress={handleSave}>
+              Enregistrer
+            </PaperButton>
+            <PaperButton style={{marginTop: 8}} onPress={() => setModalVisible(false)}>
+              Annuler
+            </PaperButton>
           </View>
         </View>
       </Modal>
     </View>
-
-    /*<View style={styles.card}>
-      <TextInput
-        placeholder="Rechercher..."
-        value={search}
-        onChangeText={setSearch}
-        style={styles.searchInput}
-      />
-
-      <Button
-        title="Ajouter"
-        onPress={() => {
-          setCurrentManuel({});
-          setModalVisible(true);
-        }}
-      />
-      <FlatList
-        data={manuels.filter(m =>
-          Object.values(m).some(value => value?.toString().includes(search)),
-        )}
-        keyExtractor={item => item.id.toString()}
-        renderItem={({item}) => (
-          <View style={styles.container}>
-            <Text style={styles.title}>Commande: {item.commandesues_id}</Text>
-            <Text style={styles.title}>Manuel: {item.manuels_id}</Text>
-            <Text style={styles.title}>
-              Exemplaire: {item.exemplairemanuels_id}
-            </Text>
-            <Text style={styles.title}>
-              Etat à la remise: {item.etatmanuelsalaremise_id}
-            </Text>
-            <Text style={styles.title}>
-              Etat au retour: {item.etatmanuelsauretour_id}
-            </Text>
-            <Text style={styles.title}>
-              Rendu: {item.rendu ? 'Oui' : 'Non'}
-            </Text>
-
-            <View style={styles.actions}>
-              <TouchableOpacity
-                onPress={() => {
-                  setCurrentManuel(item);
-                  setModalVisible(true);
-                }}>
-                <Text style={{fontSize: 20}}>✏️</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleDelete(item.id)}>
-                <Text style={{fontSize: 20}}>🗑️</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-      />
-
-      <Modal visible={modalVisible} transparent={true} animationType="slide">
-        <View style={styles.modalContainer}>
-          <View style={styles.modal}>
-            <Text>Commande ID:</Text>
-            <TextInput
-              value={currentManuel?.commandesues_id?.toString() || ''}
-              onChangeText={text =>
-                setCurrentManuel({...currentManuel, commandesues_id: text})
-              }
-              style={styles.input}
-            />
-            <View style={{flexDirection: 'row', alignItems: 'center'}}>
-              <Text>Rendu :</Text>
-
-              <Switch
-                value={currentManuel.rendu}
-                onChangeText={text =>
-                  setCurrentManuel({...currentManuel, rendu: text})
-                }
-                //onValueChange={setRendu}
-              />
-            </View>
-            <Button title="Enregistrer" onPress={handleSave} />
-            <Button title="Annuler" onPress={() => setModalVisible(false)} />
-          </View>
-        </View>
-      </Modal>
-    </View>*/
   );
 };
 
@@ -784,12 +694,14 @@ const styles = StyleSheet.create({
   },
   modal: {backgroundColor: 'white', padding: 20, borderRadius: 10},
   input: {
-    height: 40,
-    borderColor: 'gray',
+    borderColor: '#ccc',
     borderWidth: 1,
-    marginBottom: 8,
+    borderRadius: 6,
     paddingHorizontal: 8,
+    marginBottom: 10,
+    height: 40,
     color: 'black',
   },
 });
+
 export default ManuelsUES;

@@ -129,3 +129,6 @@ dependencies {
     implementation project(':react-native-share')
     
 }
+
+// Ensure vector icon fonts are bundled with the app
+apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"

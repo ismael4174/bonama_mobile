@@ -1,16 +1,10 @@
 import React, {useState, useEffect} from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Button,
-  Modal,
-  Alert,
-} from 'react-native';
+import {View, Text, FlatList, TouchableOpacity, StyleSheet, Modal, Alert} from 'react-native';
+import {TextInput as PaperTextInput, Button as PaperButton} from 'react-native-paper';
 import SQLite from 'react-native-sqlite-storage';
+import EmptyState from '../ui/EmptyState';
+import LoadingState from '../ui/LoadingState';
+import ErrorState from '../ui/ErrorState';
 import axios from 'axios';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {db} from '../../db/database';
@@ -40,6 +34,8 @@ const ManuelRetrouve1 = () => {
   const [etatmanuel, setEtatmanuel] = useState('');
   const [statuts, setStatuts] = useState([]);
   const [etatmanuels, setEtatmanuels] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   //const anneescolairesID = parseInt(UseAnneescolairesID(), 10);
   const drenasID = parseInt(UseDrenaId(), 10);
   ///////////////////////////////////////////
@@ -160,15 +156,29 @@ const ManuelRetrouve1 = () => {
   }, []);
 
   const fetchData = () => {
-    db.transaction(tx => {
-      tx.executeSql(
-        'SELECT * FROM stockmanuels JOIN etablissements on etablissements.id = stockmanuels.etablissements_id WHERE etablissements.drenas_id=?',
-        [drenasID],
-        (_, {rows}) => {
-          setData(rows.raw());
-        },
-      );
-    });
+    setError('');
+    setLoading(true);
+    db.transaction(
+      tx => {
+        tx.executeSql(
+          'SELECT * FROM stockmanuels JOIN etablissements on etablissements.id = stockmanuels.etablissements_id WHERE etablissements.drenas_id=?',
+          [drenasID],
+          (_, {rows}) => {
+            setData(rows.raw());
+            setLoading(false);
+          },
+          (_, err) => {
+            setError('Impossible de charger les manuels retrouvés.');
+            setLoading(false);
+            return false;
+          },
+        );
+      },
+      err => {
+        setError('Erreur de transaction lors du chargement.');
+        setLoading(false);
+      },
+    );
   };
   const addOrUpdateItem = () => {
     db.transaction(tx => {
@@ -331,12 +341,21 @@ const ManuelRetrouve1 = () => {
 
   return (
     <View style={styles.container}>
-      <TextInput
+      {loading ? (
+        <LoadingState label="Chargement des manuels retrouvés..." />
+      ) : error ? (
+        <ErrorState subtitle={error} onAction={fetchData} />
+      ) : (
+        <>
+      <PaperTextInput
+        mode="outlined"
         placeholder="Rechercher..."
         value={search}
         onChangeText={setSearch}
-        placeholderTextColor="black"
         style={styles.searchInput}
+        left={<PaperTextInput.Icon icon="magnify" />}
+        accessibilityLabel="Recherche"
+        accessibilityHint="Filtrer la liste des manuels"
       />
 
       <FlatList
@@ -344,6 +363,7 @@ const ManuelRetrouve1 = () => {
           item.referenceexemplaire.toLowerCase().includes(search.toLowerCase()),
         )}
         keyExtractor={item => `${item.id}-${item.referenceexemplaire}`}
+        ListEmptyComponent={<EmptyState title="Aucun manuel retrouvé" subtitle="Modifiez la recherche pour voir des résultats" />}
         renderItem={({item}) => {
           const findLabel = (list, id, key) =>
             list.find(el => el.id === id)?.[key] || 'Inconnu';
@@ -361,7 +381,11 @@ const ManuelRetrouve1 = () => {
           );
 
           return (
-            <View style={styles.card}>
+            <View
+              style={styles.card}
+              accessible
+              accessibilityLabel={`Manuel ${libelleManuel}, référence ${item.referenceexemplaire}, statut ${libelleStatut}, état ${libelleEtat}`}
+            >
               <Text style={styles.title}>Manuel: {libelleManuel}</Text>
               <Text style={styles.title}>Ref: {item.referenceexemplaire}</Text>
               <Text style={styles.title}>Statut: {libelleStatut}</Text>
@@ -371,7 +395,10 @@ const ManuelRetrouve1 = () => {
                   onPress={() => {
                     setCurrentItem(item);
                     setModalVisible(true);
-                  }}>
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Modifier le manuel ${libelleManuel}, référence ${item.referenceexemplaire}`}
+                  hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
                   <Text style={{fontSize: 20}}>✏️</Text>
                 </TouchableOpacity>
               </View>
@@ -395,7 +422,8 @@ const ManuelRetrouve1 = () => {
           />
 
           <Text>Référence:</Text>
-          <TextInput
+          <PaperTextInput
+            mode="outlined"
             placeholder="Référence"
             value={currentItem?.referenceexemplaire || ''}
             onChangeText={text =>
@@ -435,19 +463,23 @@ const ManuelRetrouve1 = () => {
               {currentItem.manuelseleves.map((eleve, i) => (
                 <View key={i} style={styles.subCard}>
                   <Text>Manuel ID:</Text>
-                  <TextInput
+                  <PaperTextInput
+                    mode="outlined"
                     value={eleve.manuels_id?.toString() || ''}
                     onChangeText={text =>
                       handleManuelEleveChange(i, 'manuels_id', text)
                     }
                     keyboardType="numeric"
+                    style={{marginBottom: 8}}
                   />
                   <Text>Couverture:</Text>
-                  <TextInput
+                  <PaperTextInput
+                    mode="outlined"
                     value={eleve.couverture || ''}
                     onChangeText={text =>
                       handleManuelEleveChange(i, 'couverture', text)
                     }
+                    style={{marginBottom: 8}}
                   />
                 </View>
               ))}
@@ -461,29 +493,35 @@ const ManuelRetrouve1 = () => {
               {currentItem.manuelsues.map((ues, i) => (
                 <View key={i} style={styles.subCard}>
                   <Text>Commandes UES ID:</Text>
-                  <TextInput
+                  <PaperTextInput
+                    mode="outlined"
                     value={ues.commandesues_id?.toString() || ''}
                     onChangeText={text =>
                       handleManuelUesChange(i, 'commandesues_id', text)
                     }
                     keyboardType="numeric"
+                    style={{marginBottom: 8}}
                   />
                   <Text>Manuels ID:</Text>
-                  <TextInput
+                  <PaperTextInput
+                    mode="outlined"
                     value={ues.manuels_id?.toString() || ''}
                     onChangeText={text =>
                       handleManuelUesChange(i, 'manuels_id', text)
                     }
                     keyboardType="numeric"
+                    style={{marginBottom: 8}}
                   />
                 </View>
               ))}
             </View>
           )}
 
-          <Button title="Annuler" onPress={() => setModalVisible(false)} />
+          <PaperButton onPress={() => setModalVisible(false)}>Annuler</PaperButton>
         </View>
       </Modal>
+      </>
+      )}
     </View>
   );
 };

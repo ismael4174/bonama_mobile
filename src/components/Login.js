@@ -1,13 +1,15 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
+import {View, StyleSheet, Alert, KeyboardAvoidingView, Platform, Image, Dimensions} from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import {
-  View,
   Text,
   TextInput,
   Button,
-  StyleSheet,
-  Alert,
   ActivityIndicator,
-} from 'react-native';
+  HelperText,
+  Surface,
+  IconButton,
+} from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import AuthenticationService from '../authentificationservice';
 import useAnneescolairesID from '../parametres/anneescolaire.js';
@@ -17,9 +19,17 @@ const Login = ({navigation}) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const anneescolairesId = useAnneescolairesID();
+  const usernameError = touched && !String(username).trim();
+  const passwordError = touched && !String(password).trim();
 
   const handleLogin = async () => {
+    setTouched(true);
+    if (!String(username).trim() || !String(password).trim()) {
+      return;
+    }
     setLoading(true);
     try {
       const data = await AuthenticationService.login(username, password);
@@ -38,18 +48,18 @@ const Login = ({navigation}) => {
         if (etablissementId) {
           //await AsyncStorage.setItem('loginetab', username);
           await initializeDataEtab(etablissementId, anneescolairesId);
-          navigation.navigate('Main'); // Redirection après connexion réussie
+          navigation.reset({index: 0, routes: [{name: 'Main'}]});
         } else {
           if (drenaId) {
             // await AsyncStorage.setItem('logindrena', username);
             await initializeDataDrena(drenaId, anneescolairesId);
-            navigation.navigate('Main1'); // Redirection après connexion réussie
+            navigation.reset({index: 0, routes: [{name: 'Main1'}]});
           } else {
             Alert.alert(
               'Erreur',
               'Cette application est réservée seulement pour les établissements, les ce et les DRENA',
             );
-            navigation.navigate('Login'); // Redirection après connexion réussie
+            navigation.reset({index: 0, routes: [{name: 'Login'}]});
           }
         }
       } else {
@@ -63,37 +73,118 @@ const Login = ({navigation}) => {
     }
   };
 
+  const screenHeight = Dimensions.get('window').height;
+  const HERO_HEIGHT = Math.round(screenHeight * (screenHeight < 700 ? 0.52 : 0.6));
+
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View style={styles.scroll}>
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#0000ff" />
+          <ActivityIndicator animating size="large" />
           <Text style={styles.loadingText}>
             Chargement des données... Veuillez rester connecté
           </Text>
         </View>
       ) : (
-        <>
-          <Text style={styles.title}>Connexion</Text>
+        <View style={{flex: 1}}>
+          <View style={styles.heroContainer}>
+            <IconButton
+              icon="chevron-left"
+              size={24}
+              onPress={() => navigation.navigate('Accueil2')}
+              style={styles.backButton}
+              iconColor="#FFFFFF"
+              accessibilityLabel="Revenir à l'accueil"
+            />
+            <Image source={require('./login.jpg')} style={[styles.heroImage, {height: HERO_HEIGHT}]} accessibilityLabel="Illustration de manuels scolaires" />
+            <LinearGradient
+              colors={["rgba(0,0,0,0.0)", "rgba(0,0,0,0.45)"]}
+              style={styles.heroOverlay}
+              pointerEvents="none"
+            />
+            <Text style={styles.heroTitle}>BONAMAS LOGIN</Text>
+          </View>
+          <Surface style={styles.card} mode="flat" accessibilityLabel="Formulaire de connexion">
+            <Text
+              variant="headlineMedium"
+              style={styles.title}
+              accessibilityLabel="Titre de la page Connexion"
+            >
+              Connexion
+            </Text>
           <TextInput
+            mode="flat"
             style={styles.input}
-            placeholder="Nom d'utilisateur"
-            placeholderTextColor="black"
+            label="Nom d'utilisateur"
             value={username}
             onChangeText={setUsername}
+            autoCapitalize="none"
+            autoComplete="username"
+            textContentType="username"
+            returnKeyType="next"
+            left={<TextInput.Icon icon="account" />}
+            error={!!usernameError}
+            underlineColor="#9CA3AF"
+            activeUnderlineColor="#2563EB"
+            accessibilityLabel="Champ nom d'utilisateur"
+            accessibilityHint="Saisissez votre nom d'utilisateur"
           />
+          <HelperText type="error" visible={!!usernameError}>
+            Nom d'utilisateur requis
+          </HelperText>
           <TextInput
+            mode="flat"
             style={styles.input}
-            placeholder="Mot de passe"
-            placeholderTextColor="black"
+            label="Mot de passe"
             value={password}
             onChangeText={setPassword}
-            secureTextEntry
+            secureTextEntry={!showPassword}
+            autoComplete="password"
+            textContentType="password"
+            returnKeyType="go"
+            onSubmitEditing={handleLogin}
+            left={<TextInput.Icon icon="lock" />}
+            right={
+              <TextInput.Icon
+                icon={showPassword ? 'eye-off' : 'eye'}
+                onPress={() => setShowPassword(prev => !prev)}
+                forceTextInputFocus={false}
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+              />
+            }
+            error={!!passwordError}
+            underlineColor="#9CA3AF"
+            activeUnderlineColor="#2563EB"
+            accessibilityLabel="Champ mot de passe"
+            accessibilityHint="Saisissez votre mot de passe"
           />
-          <Button title="Se connecter" onPress={handleLogin} />
-        </>
+          <HelperText type="error" visible={!!passwordError}>
+            Mot de passe requis
+          </HelperText>
+          <Button
+            mode="contained"
+            onPress={handleLogin}
+            disabled={loading || !String(username).trim() || !String(password).trim()}
+            loading={loading}
+            accessibilityRole="button"
+            accessibilityLabel="Bouton Se connecter"
+            accessibilityHint="Valide vos identifiants et ouvre le tableau de bord"
+            style={styles.primaryButton}
+            contentStyle={styles.primaryButtonContent}
+            labelStyle={styles.primaryButtonLabel}
+          >
+            Se connecter
+          </Button>
+          </Surface>
+        </View>
       )}
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -101,7 +192,61 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
-    padding: 16,
+    // padding: 16,
+  },
+  scroll: {
+    flexGrow: 1,
+    justifyContent: 'flex-start',
+  },
+  card: {
+    padding: 24,
+    marginHorizontal: 0,
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    marginTop: -96,
+    elevation: 0,
+    shadowColor: 'transparent',
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    borderWidth: 0,
+  },
+  heroContainer: {
+    position: 'relative',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 12,
+    left: 8,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    zIndex: 2,
+  },
+  heroImage: {
+    width: '100%',
+    resizeMode: 'cover',
+  },
+  heroOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    top: 0,
+  },
+  heroTitle: {
+    position: 'absolute',
+    top: '50%',
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: 1,
+    transform: [{translateY: -12}],
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: {width: 0, height: 1},
+    textShadowRadius: 3,
   },
   loadingContainer: {
     alignItems: 'center',
@@ -113,18 +258,24 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: 'gray',
   },
+  primaryButton: {
+    borderRadius: 26,
+    marginTop: 8,
+  },
+  primaryButtonContent: {
+    height: 50,
+  },
+  primaryButtonLabel: {
+    fontWeight: '600',
+  },
   title: {
     fontSize: 24,
     marginBottom: 16,
     textAlign: 'center',
+    fontWeight: '700',
   },
   input: {
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
     marginBottom: 12,
-    paddingHorizontal: 8,
-    color: 'black',
   },
 });
 

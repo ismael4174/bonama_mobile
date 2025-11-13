@@ -1,14 +1,6 @@
 import React, {useEffect, useState, useCallback} from 'react';
-import {
-  View,
-  Image,
-  Text,
-  FlatList,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  Modal,
-} from 'react-native';
+import {View, Image, Text, FlatList, StyleSheet, TouchableOpacity, Modal} from 'react-native';
+import {TextInput as PaperTextInput, List, Divider, Button as PaperButton} from 'react-native-paper';
 import RNHTMLtoPDF from 'react-native-html-to-pdf';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
@@ -361,95 +353,52 @@ const ElevesInscrits = ({navigation}) => {
   const closeRetourEleveDetails = useCallback(() => {
     setRetourEleveDetailsVisible(false);
   }, []);
+
   return (
     <View style={styles.container}>
-      <TextInput
+      <PaperTextInput
+        mode="outlined"
         style={styles.searchInput}
         placeholder="Rechercher par nom, matricule ou prénom"
         value={searchText}
         onChangeText={setSearchText}
-        placeholderTextColor="black"
+        left={<PaperTextInput.Icon icon="magnify" />}
       />
       <FlatList
         data={eleves}
         keyExtractor={item => item.id.toString()}
+        ItemSeparatorComponent={Divider}
         renderItem={({item}) => (
-          <View style={styles.card}>
-            {/*<Text style={styles.text}>
-              <Text style={styles.bold}>ElevesInscritId :</Text> {item.id}
-            </Text>*/}
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Élève :</Text> {item.eleve}
-            </Text>
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Classe :</Text> {item.classe}
-            </Text>
-            {/*<Text style={styles.text}>
-              <Text style={styles.bold}>Établissement :</Text>
-              {item.etablissement}
-            </Text>
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Année :</Text> {item.annee_scolaire}
-            </Text>*/}
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Pénalité :</Text> {item.penalite} FCFA
-            </Text>
-            {/*<Text style={styles.text}>
-              <Text style={styles.bold}>Souscrit :</Text>
-              {item.souscrit ? 'Oui' : 'Non'}
-            </Text>*/}
-            <View style={styles.actions}>
-              {item.retourfinalise === 1 ? (
-                <>
-                  <TouchableOpacity style={styles.redButton}>
-                    <Text style={styles.whiteText}>Déjà finalisée</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => handleTelechargerPDF(item)}
-                    style={styles.blueButton}>
-                    <Text style={styles.whiteText}>Reçu</Text>
-                  </TouchableOpacity>
-                  {/*<TouchableOpacity
-                    onPress={() => {
-                      //handleEditerRemise(item);
-                      navigation.navigate('RetourEleveDetails', {
-                        eleveInscritId: item.id,
-                      }); // 123 est l'ID de la commande
-                    }}
-                    // onPress={() => handleEditerRemise(item)}
-                    style={styles.blueButton}>
-                    <Text style={styles.whiteText}>Editer</Text>
-                  </TouchableOpacity>*/}
-                </>
-              ) : (
-                <>
-                  {/* <TouchableOpacity
-                    onPress={() => {
-                      handleFinaliserRetour(item);
-                      navigation.navigate('RetourEleveDetails', {
-                        eleveInscritId: item.id,
-                      }); // 123 est l'ID de la commande
-                    }}
-                    style={styles.blueButton}>
-                    <Text style={styles.whiteText}>Finaliser</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.blueButton}>
-                    <Text style={styles.whiteText}>Non disponible</Text>
-                  </TouchableOpacity>*/}
-                  <TouchableOpacity
-                    onPress={() => {
-                      //  handleEditerRemise(item);
-                      navigation.navigate('RetourEleveDetails', {
-                        eleveInscritId: item.id,
-                      }); // 123 est l'ID de la commande
-                    }}
-                    style={styles.blueButton}>
-                    <Text style={styles.whiteText}>Editer</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          </View>
+          <List.Item
+            title={item.eleve}
+            titleNumberOfLines={3}
+            titleEllipsizeMode="tail"
+            description={() => (
+              <View>
+                <Text style={styles.text}>Classe: {item.classe}</Text>
+                <Text style={styles.penalite}>Pénalité: {item.penalite} FCFA</Text>
+              </View>
+            )}
+            left={props => <List.Icon {...props} icon="account" />}
+            right={props => (
+              <View style={{justifyContent: 'center'}}>
+                {item.retourfinalise === 1 ? (
+                  <View style={{flexDirection: 'row', gap: 8}}>
+                    <PaperButton mode="contained" disabled>Déjà finalisée</PaperButton>
+                    <PaperButton mode="outlined" onPress={() => handleTelechargerPDF(item)}>Reçu</PaperButton>
+                  </View>
+                ) : (
+                  <PaperButton
+                    mode="contained"
+                    onPress={() =>
+                      navigation.navigate('RetourEleveDetails', {eleveInscritId: item.id})
+                    }>
+                    Editer
+                  </PaperButton>
+                )}
+              </View>
+            )}
+          />
         )}
       />
       <Modal
@@ -500,6 +449,12 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 16,
     marginVertical: 2,
+  },
+  penalite: {
+    fontSize: 16,
+    marginVertical: 2,
+    color: 'red',
+    fontWeight: '600',
   },
   bold: {
     fontWeight: 'bold',

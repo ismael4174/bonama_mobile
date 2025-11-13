@@ -27,6 +27,7 @@ import {
   Alert,
   ActivityIndicator,
   StyleSheet,
+  useColorScheme,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Home from './src/components/Home';
@@ -37,6 +38,7 @@ import Contacteznous from './src/components/Contacteznous';
 import SendEmail from './src/components/SendEmail';
 import Login from './src/components/Login';
 import Etablissementchoisi from './src/components/Etablissementchoisi';
+import AuthenticationService from './src/authentificationservice';
 //import Ces from './src/components/ces/CeInscrits';
 import Genres from './src/components/genres/Genres';
 import Synclogs from './src/components/synclogs/Synclog';
@@ -66,87 +68,249 @@ import ValidationCe from './src/components/ces/ValidationSouscriptionCe';
 import ValidationEleve from './src/components/eleves/ValidationSouscriptionEleve';
 import Guide from './src/components/GuideUtilisateur';
 import useAnneescolairesID from './src/parametres/anneescolaire.js';
+import {Provider as PaperProvider, MD3LightTheme, MD3DarkTheme, List, Divider, Avatar, Appbar, useTheme} from 'react-native-paper';
+import type {NativeStackHeaderProps} from '@react-navigation/native-stack';
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 
+// Simple theme preference context
+type ThemePref = { mode: 'system' | 'light' | 'dark'; toggle: () => void; setMode: (m: 'system' | 'light' | 'dark') => void };
+const ThemePrefContext = React.createContext<ThemePref>({ mode: 'system', toggle: () => {}, setMode: () => {} });
+
+const lightTheme = {
+  ...MD3LightTheme,
+  roundness: 8,
+  colors: {
+    ...MD3LightTheme.colors,
+    // Soft MD3 palette
+    primary: '#2563EB',
+    onPrimary: '#FFFFFF',
+    primaryContainer: '#DBEAFE',
+    onPrimaryContainer: '#1E3A8A',
+
+    secondary: '#F59E0B',
+    onSecondary: '#1F2937',
+    secondaryContainer: '#FEF3C7',
+    onSecondaryContainer: '#92400E',
+
+    surface: '#FFFFFF',
+    onSurface: '#111827',
+    surfaceVariant: '#F6F8FA',
+    onSurfaceVariant: '#334155',
+    background: '#FFFFFF',
+    outline: '#D0D5DD',
+  },
+};
+
+const darkTheme = {
+  ...MD3DarkTheme,
+  roundness: 8,
+  colors: {
+    ...MD3DarkTheme.colors,
+    // Soft MD3 dark counterparts
+    primary: '#93C5FD',
+    onPrimary: '#0B1A39',
+    primaryContainer: '#1E3A8A',
+    onPrimaryContainer: '#DBEAFE',
+
+    secondary: '#FBBF24',
+    onSecondary: '#1F2937',
+    secondaryContainer: '#92400E',
+    onSecondaryContainer: '#FEF3C7',
+
+    surface: '#0B1220',
+    onSurface: '#E5E7EB',
+    surfaceVariant: '#111827',
+    onSurfaceVariant: '#CBD5E1',
+    background: '#0B1220',
+    outline: '#334155',
+  },
+};
+
+const AppHeader = (props: NativeStackHeaderProps) => {
+  const {navigation, route, options, back} = props;
+  const theme = useTheme();
+  const themePref = React.useContext(ThemePrefContext);
+  return (
+  <Appbar.Header elevated>
+    {back ? (
+      <Appbar.BackAction onPress={navigation.goBack} />
+    ) : (
+      // Open drawer from parent navigator if available
+      <Appbar.Action
+        icon="menu"
+        onPress={() => {
+          const parent = (navigation as any)?.getParent?.();
+          parent?.openDrawer?.();
+        }}
+      />
+    )}
+    <Appbar.Content title={options?.title ?? route?.name ?? ''} />
+    {false && (
+      <Appbar.Action
+        icon={theme.dark ? 'white-balance-sunny' : 'weather-night'}
+        onPress={() => themePref.toggle()}
+        accessibilityLabel="Changer le thème clair/sombre"
+      />
+    )}
+    {options?.headerRight ? options.headerRight({canGoBack: !!back}) : null}
+  </Appbar.Header>
+  );
+};
+
 const handleLogout = async navigation => {
   await AsyncStorage.removeItem('token');
+  await AsyncStorage.removeItem('user');
+  await AsyncStorage.removeItem('etablissements_id');
+  await AsyncStorage.removeItem('drenas_id');
   await AsyncStorage.setItem('drenaDataInitialized', 'false');
   await AsyncStorage.setItem('etabDataInitialized', 'false'); // Marquer comme non initialisé
   await AsyncStorage.setItem('databaseInitialized', 'false'); // Marquer comme non initialisé
-  navigation.navigate('Accueil2');
+  navigation.reset({index: 0, routes: [{name: 'Login'}]});
 };
 const CustomDrawerContent1 = ({navigation}) => {
+  const anneeId = useAnneescolairesID();
+  const [syncing, setSyncing] = useState(false);
+  const [initializing, setInitializing] = useState(false);
+  const handleSync = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      await checkAndSync(true);
+    } catch (e) {
+      Alert.alert('Erreur', "Une erreur s'est produite lors de la synchronisation.");
+    } finally {
+      setSyncing(false);
+    }
+  };
+  const handleInit = async () => {
+    if (initializing) return;
+    setInitializing(true);
+    try {
+      const isConnected = await checkConnection();
+      if (!isConnected) {
+        Alert.alert('Erreur', 'Aucune connexion internet détectée.');
+        return;
+      }
+      const madrenaId = await AsyncStorage.getItem('drenas_id');
+      const drenaId = madrenaId ? parseInt(madrenaId, 10) : null;
+      await initializeDatabase('drena', drenaId, anneeId, true);
+      Alert.alert('Succès', 'Initialisation des données terminée.');
+    } catch (e) {
+      Alert.alert('Erreur', "Une erreur s'est produite lors de l'initialisation.");
+    } finally {
+      setInitializing(false);
+    }
+  };
   return (
     <View style={{flex: 1}}>
-      <Button
-        title="Tableau de bord"
-        onPress={() => navigation.navigate('Tableau de bord')}
-      />
-      <Button
-        title="Documentation"
-        onPress={() => navigation.navigate('Documentation')}
-      />
-      <Button
-        title="Paramètres généraux"
-        onPress={() => navigation.navigate('Paramètres généraux')}
-      />
-      {/** Transferts de manuels (désactivé) */}
-      {/**
-      <Button
-        title="Transferts de manuels"
-        onPress={() => navigation.navigate('Transferts de manuels')}
-      />
-      */}
-      <Button
-        title="Liste des manuels"
-        onPress={() => navigation.navigate('Liste des manuels')}
-      />
-      <Button
-        title="Souscriptions"
-        onPress={() => navigation.navigate('Souscriptions')}
-      />
-      <Button
-        title="Recap Etab"
-        onPress={() => navigation.navigate('Recap Etab')}
-      />
-
-      <Button title="Déconnexion" onPress={() => handleLogout(navigation)} />
+      <View style={{padding: 16, flexDirection: 'row', alignItems: 'center'}}>
+        <Avatar.Icon size={40} icon="account" />
+        <Text style={{marginLeft: 12, fontSize: 16, fontWeight: '600'}}>Menu</Text>
+      </View>
+      <Divider />
+      <List.Section>
+        <List.Item
+          title="Synchroniser maintenant"
+          left={props => <List.Icon {...props} icon="sync" color="#FFFFFF" />}
+          right={() => (syncing ? <ActivityIndicator /> : null)}
+          onPress={handleSync}
+          disabled={syncing}
+          style={{backgroundColor: '#2563EB', borderRadius: 8, marginHorizontal: 12, marginTop: 8}}
+          titleStyle={{color: '#FFFFFF', fontWeight: '600'}}
+        />
+        <List.Item
+          title="Initialiser les données"
+          left={props => <List.Icon {...props} icon="database" color="#FFFFFF" />}
+          right={() => (initializing ? <ActivityIndicator /> : null)}
+          onPress={handleInit}
+          disabled={initializing}
+          style={{backgroundColor: '#2563EB', borderRadius: 8, marginHorizontal: 12, marginTop: 8}}
+          titleStyle={{color: '#FFFFFF', fontWeight: '600'}}
+        />
+        <List.Item title="Tableau de bord" left={props => <List.Icon {...props} icon="view-dashboard" />} onPress={() => navigation.navigate('Tableau de bord')} />
+        <List.Item title="Documentation" left={props => <List.Icon {...props} icon="file-document" />} onPress={() => navigation.navigate('Documentation')} />
+        <List.Item title="Paramètres généraux" left={props => <List.Icon {...props} icon="cog" />} onPress={() => navigation.navigate('Paramètres généraux')} />
+        <List.Item title="Liste des manuels" left={props => <List.Icon {...props} icon="book" />} onPress={() => navigation.navigate('Liste des manuels')} />
+        <List.Item title="Souscriptions" left={props => <List.Icon {...props} icon="account-group" />} onPress={() => navigation.navigate('Souscriptions')} />
+        <List.Item title="Recap Etab" left={props => <List.Icon {...props} icon="school" />} onPress={() => navigation.navigate('Recap Etab')} />
+      </List.Section>
+      <Divider />
+      <List.Item title="Déconnexion" left={props => <List.Icon {...props} icon="logout" />} onPress={() => handleLogout(navigation)} />
     </View>
   );
 };
 const CustomDrawerContent = ({navigation}) => {
+  const anneeId = useAnneescolairesID();
+  const [syncing, setSyncing] = useState(false);
+  const [initializing, setInitializing] = useState(false);
+  const handleSync = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      await checkAndSync(true);
+    } catch (e) {
+      Alert.alert('Erreur', "Une erreur s'est produite lors de la synchronisation.");
+    } finally {
+      setSyncing(false);
+    }
+  };
+  const handleInit = async () => {
+    if (initializing) return;
+    setInitializing(true);
+    try {
+      const isConnected = await checkConnection();
+      if (!isConnected) {
+        Alert.alert('Erreur', 'Aucune connexion internet détectée.');
+        return;
+      }
+      const monEtablissementId = await AsyncStorage.getItem('etablissements_id');
+      const etablissementId = monEtablissementId ? parseInt(monEtablissementId, 10) : null;
+      await initializeDatabase('etab', etablissementId, anneeId, true);
+      Alert.alert('Succès', 'Initialisation des données terminée.');
+    } catch (e) {
+      Alert.alert('Erreur', "Une erreur s'est produite lors de l'initialisation.");
+    } finally {
+      setInitializing(false);
+    }
+  };
   return (
     <View style={{flex: 1}}>
-      <Button
-        title="Tableau de bord"
-        onPress={() => navigation.navigate('Tableau de bord')}
-      />
-
-      <Button
-        title="Souscriptions"
-        onPress={() => navigation.navigate('Souscriptions')}
-      />
-      <Button
-        title="Validations"
-        onPress={() => navigation.navigate('Validations')}
-      />
-
-      <Button title="Remise" onPress={() => navigation.navigate('Remise')} />
-      <Button title="Retour" onPress={() => navigation.navigate('Retour')} />
-      <Button
-        title="Liste des manuels"
-        onPress={() => navigation.navigate('Liste des manuels')}
-      />
-      <Button
-        title="Documentation"
-        onPress={() => navigation.navigate('Documentation')}
-      />
-      <Button
-        title="Paramètres généraux"
-        onPress={() => navigation.navigate('Paramètres généraux')}
-      />
-      <Button title="Déconnexion" onPress={() => handleLogout(navigation)} />
+      <View style={{padding: 16, flexDirection: 'row', alignItems: 'center'}}>
+        <Avatar.Icon size={40} icon="account" />
+        <Text style={{marginLeft: 12, fontSize: 16, fontWeight: '600'}}>Menu</Text>
+      </View>
+      <Divider />
+      <List.Section>
+        <List.Item
+          title="Synchroniser maintenant"
+          left={props => <List.Icon {...props} icon="sync" color="#FFFFFF" />}
+          right={() => (syncing ? <ActivityIndicator /> : null)}
+          onPress={handleSync}
+          disabled={syncing}
+          style={{backgroundColor: '#2563EB', borderRadius: 8, marginHorizontal: 12, marginTop: 8}}
+          titleStyle={{color: '#FFFFFF', fontWeight: '600'}}
+        />
+        <List.Item
+          title="Initialiser les données"
+          left={props => <List.Icon {...props} icon="database" color="#FFFFFF" />}
+          right={() => (initializing ? <ActivityIndicator /> : null)}
+          onPress={handleInit}
+          disabled={initializing}
+          style={{backgroundColor: '#2563EB', borderRadius: 8, marginHorizontal: 12, marginTop: 8}}
+          titleStyle={{color: '#FFFFFF', fontWeight: '600'}}
+        />
+        <List.Item title="Tableau de bord" left={props => <List.Icon {...props} icon="view-dashboard" />} onPress={() => navigation.navigate('Tableau de bord')} />
+        <List.Item title="Souscriptions" left={props => <List.Icon {...props} icon="account-group" />} onPress={() => navigation.navigate('Souscriptions')} />
+        <List.Item title="Validations" left={props => <List.Icon {...props} icon="check-decagram" />} onPress={() => navigation.navigate('Validations')} />
+        <List.Item title="Remise" left={props => <List.Icon {...props} icon="send" />} onPress={() => navigation.navigate('Remise')} />
+        <List.Item title="Retour" left={props => <List.Icon {...props} icon="undo" />} onPress={() => navigation.navigate('Retour')} />
+        <List.Item title="Liste des manuels" left={props => <List.Icon {...props} icon="book" />} onPress={() => navigation.navigate('Liste des manuels')} />
+        <List.Item title="Documentation" left={props => <List.Icon {...props} icon="file-document" />} onPress={() => navigation.navigate('Documentation')} />
+        <List.Item title="Paramètres généraux" left={props => <List.Icon {...props} icon="cog" />} onPress={() => navigation.navigate('Paramètres généraux')} />
+      </List.Section>
+      <Divider />
+      <List.Item title="Déconnexion" left={props => <List.Icon {...props} icon="logout" />} onPress={() => handleLogout(navigation)} />
     </View>
   );
 };
@@ -189,17 +353,6 @@ function DrawerScreens1({navigation}) {
   /////////////////////////////////
   return (
     <View style={{flex: 1, padding: 10}}>
-      <Button
-        title="🔄 Synchroniser maintenant"
-        onPress={() => checkAndSync(true)}
-      />
-      <Button
-        title="Initialiser les données"
-        onPress={handleInitialize}
-        disabled={isLoading || isInitialized}
-      />
-      {isLoading && <ActivityIndicator />}
-
       <Drawer.Navigator
         drawerContent={props => <CustomDrawerContent1 {...props} />}>
         <Drawer.Screen name="Tableau de bord" component={Home1} />
@@ -265,17 +418,6 @@ function DrawerScreens({navigation}) {
   /////////////////////////////////
   return (
     <View style={{flex: 1, padding: 10}}>
-      <Button
-        title="🔄 Synchroniser maintenant"
-        onPress={() => checkAndSync(true)}
-      />
-      <Button
-        title="Initialiser les données"
-        onPress={handleInitialize}
-        disabled={isLoading || isInitialized}
-      />
-      {isLoading && <ActivityIndicator />}
-
       <Drawer.Navigator
         drawerContent={props => <CustomDrawerContent {...props} />}>
         <Drawer.Screen name="Tableau de bord" component={Home} />
@@ -449,12 +591,13 @@ function ValidationScreen({navigation}) {
 function ParametresStack() {
   return (
     <Stack.Navigator>
-      <Stack.Screen name="..." component={ParametresgenereauxScreen} />
-      <Stack.Screen name="Manuels en stock" component={ManuelsEnStock} />
-      <Stack.Screen name="Créer un CE" component={CreationDeCe} />
+      <Stack.Screen name=" " component={ParametresgenereauxScreen} />
+      <Stack.Screen name="Manuels en stock" component={ManuelsEnStock} options={{ title: 'Manuels en stock' }}/>
+      <Stack.Screen name="Créer un CE" component={CreationDeCe} options={{ title: 'Créer un CE' }}/>
       <Stack.Screen
         name="Actualiser les données"
         component={ActualisationEleve}
+        options={{ title: 'Actualiser les données' }}
       />
     </Stack.Navigator>
   );
@@ -462,15 +605,15 @@ function ParametresStack() {
 function ParametresStack1() {
   return (
     <Stack.Navigator>
-      <Stack.Screen name="..." component={ParametresgenereauxScreen1} />
-      <Stack.Screen name="Manuels en stock" component={ManuelsEnStock1} />
+      <Stack.Screen name=" " component={ParametresgenereauxScreen1} />
+      <Stack.Screen name="Manuels en stock" component={ManuelsEnStock1} options={{ title: 'Manuels en stock' }}/>
     </Stack.Navigator>
   );
 }
 function TransfertStack1() {
   return (
     <Stack.Navigator>
-      <Stack.Screen name="..." component={TransfertScreen1} />
+      <Stack.Screen name=" " component={TransfertScreen1} />
       <Stack.Screen name="Transferts" component={Transferts} />
     </Stack.Navigator>
   );
@@ -478,16 +621,16 @@ function TransfertStack1() {
 function ManuelRetrouveStack1() {
   return (
     <Stack.Navigator>
-      <Stack.Screen name="..." component={ManuelRetrouveScreen1} />
-      <Stack.Screen name="ManuelRetrouve" component={ManuelRetrouve1} />
+      <Stack.Screen name=" " component={ManuelRetrouveScreen1} />
+      <Stack.Screen name="ManuelRetrouve" component={ManuelRetrouve1} options={{ title: 'Manuel Retrouve' }}/>
     </Stack.Navigator>
   );
 }
 function ManuelRetrouveStack() {
   return (
     <Stack.Navigator>
-      <Stack.Screen name="..." component={ManuelRetrouveScreen} />
-      <Stack.Screen name="ManuelRetrouve" component={ManuelRetrouve} />
+      <Stack.Screen name=" " component={ManuelRetrouveScreen} />
+      <Stack.Screen name="ManuelRetrouve" component={ManuelRetrouve} options={{ title: 'Manuel Retrouve' }}/>
     </Stack.Navigator>
   );
 }
@@ -495,8 +638,8 @@ function ManuelRetrouveStack() {
 function DocumentationStack() {
   return (
     <Stack.Navigator>
-      <Stack.Screen name="..." component={DocumentationScreen} />
-      <Stack.Screen name="Manuel d'utilisation" component={Guide} />
+      <Stack.Screen name=" " component={DocumentationScreen} />
+      <Stack.Screen name="Manuel d'utilisation" component={Guide} options={{ title: 'Manuel d\'utilisation' }}/>
     </Stack.Navigator>
   );
 }
@@ -504,7 +647,7 @@ function DocumentationStack() {
 function EtablissementchoisiStack() {
   return (
     <Stack.Navigator>
-      <Stack.Screen name="..." component={Etablissementchoisi} />
+      <Stack.Screen name=" " component={Etablissementchoisi} />
       <Stack.Screen name="Home" component={Home} />
     </Stack.Navigator>
   );
@@ -513,9 +656,9 @@ function EtablissementchoisiStack() {
 function RemiseStack() {
   return (
     <Stack.Navigator>
-      <Stack.Screen name="..." component={RemiseScreen} />
-      <Stack.Screen name="RemiseEleve" component={RemiseEleve} />
-      <Stack.Screen name="RemiseCe" component={RemiseCe} />
+      <Stack.Screen name=" " component={RemiseScreen} />
+      <Stack.Screen name="RemiseEleve" component={RemiseEleve} options={{ title: 'Remise élève' }} />
+      <Stack.Screen name="RemiseCe" component={RemiseCe} options={{ title: 'Remise CE' }} />
     </Stack.Navigator>
   );
 }
@@ -524,10 +667,10 @@ function RemiseStack() {
 function SouscripteursStack() {
   return (
     <Stack.Navigator>
-      <Stack.Screen name="..." component={SouscripteursScreen} />
-      <Stack.Screen name="Eleves attendus" component={ElevesAttendus} />
-      <Stack.Screen name="Eleves Inscrits" component={Eleves} />
-      <Stack.Screen name="Ce Inscrits" component={CeInscrits} />
+      <Stack.Screen name=" " component={SouscripteursScreen} />
+      <Stack.Screen name="Eleves attendus" component={ElevesAttendus} options={{ title: 'Eleves attendus' }}/>
+      <Stack.Screen name="Eleves Inscrits" component={Eleves} options={{ title: 'Eleves Inscrits' }}/>
+      <Stack.Screen name="Ce Inscrits" component={CeInscrits} options={{ title: 'Ce Inscrits' }}/>
     </Stack.Navigator>
   );
 }
@@ -535,10 +678,10 @@ function SouscripteursStack() {
 function SouscripteursStack1() {
   return (
     <Stack.Navigator>
-      <Stack.Screen name="..." component={SouscripteursScreen1} />
-      <Stack.Screen name="Eleves attendus" component={ElevesAttendus1} />
-      <Stack.Screen name="Eleves Inscrits" component={Eleves1} />
-      <Stack.Screen name="Ce Inscrits" component={CeInscrits1} />
+      <Stack.Screen name=" " component={SouscripteursScreen1} />
+      <Stack.Screen name="Eleves attendus" component={ElevesAttendus1} options={{ title: 'Eleves attendus' }}/>
+      <Stack.Screen name="Eleves Inscrits" component={Eleves1} options={{ title: 'Eleves Inscrits' }}/>
+      <Stack.Screen name="Ce Inscrits" component={CeInscrits1} options={{ title: 'Ce Inscrits' }}/>
     </Stack.Navigator>
   );
 }
@@ -546,9 +689,9 @@ function SouscripteursStack1() {
 function ValidationStack() {
   return (
     <Stack.Navigator>
-      <Stack.Screen name="..." component={ValidationScreen} />
-      <Stack.Screen name="Eleves" component={ValidationEleve} />
-      <Stack.Screen name="CEs" component={ValidationCe} />
+      <Stack.Screen name=" " component={ValidationScreen} />
+      <Stack.Screen name="Eleves" component={ValidationEleve} options={{ title: 'Validation Eleves' }}/>
+      <Stack.Screen name="CEs" component={ValidationCe} options={{ title: 'Validation CEs' }}/>
     </Stack.Navigator>
   );
 }
@@ -557,9 +700,9 @@ function ValidationStack() {
 function RetourStack() {
   return (
     <Stack.Navigator>
-      <Stack.Screen name="..." component={RetourScreen} />
-      <Stack.Screen name="RetourEleve" component={RetourEleve} />
-      <Stack.Screen name="RetourCe" component={RetourCe} />
+      <Stack.Screen name=" " component={RetourScreen} />
+      <Stack.Screen name="RetourEleve" component={RetourEleve} options={{ title: 'Retour Eleves' }}/>
+      <Stack.Screen name="RetourCe" component={RetourCe} options={{ title: 'Retour CEs' }}/>
     </Stack.Navigator>
   );
 }
@@ -568,6 +711,28 @@ function AppWrapper() {
   const [loading, setLoading] = useState(true); // Ajout de l'état pour le chargement
   const [isSyncing, setIsSyncing] = useState(false); // Nouvel état pour la synchronisation
   const {triggerRefresh} = useRefresh(); // 👈 on récupère le trigger ici
+  const scheme = useColorScheme();
+  const [themeMode, setThemeMode] = useState<'system' | 'light' | 'dark'>('light');
+  const effectiveScheme = 'light';
+  const themeForProvider = lightTheme;
+  const [initialRoute, setInitialRoute] = useState<'Accueil' | 'Login' | 'Main' | 'Main1'>('Accueil');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem('themeMode');
+        if (saved === 'light' || saved === 'dark' || saved === 'system') {
+          setThemeMode(saved);
+        }
+      } catch {}
+    })();
+  }, []);
+
+  const toggleThemeMode = React.useCallback(() => {
+    // Dark mode disabled; keep light only
+    setThemeMode('light');
+    AsyncStorage.setItem('themeMode', 'light').catch(() => {});
+  }, []);
 
   // On expose triggerRefresh globalement
   useEffect(() => {
@@ -585,6 +750,32 @@ function AppWrapper() {
         await insertionDesAnneescolaires();
         await insertionDesParametrages();
         await initializeDatabase();
+        // Déterminer la route initiale en fonction de la session existante
+        let userJson = await AsyncStorage.getItem('user');
+        let etabId = await AsyncStorage.getItem('etablissements_id');
+        let drenaId = await AsyncStorage.getItem('drenas_id');
+        const token = await AsyncStorage.getItem('token');
+        const hasToken = !!(token && token.trim().length > 0);
+        let hasUser = !!userJson;
+        // Si un token existe mais aucun user n'est encore chargé, tenter une vérification
+        if (hasToken && !hasUser && AuthenticationService?.checkAuthentication) {
+          try {
+            await AuthenticationService.checkAuthentication();
+            userJson = await AsyncStorage.getItem('user');
+            // relire les IDs éventuels après vérification
+            etabId = await AsyncStorage.getItem('etablissements_id');
+            drenaId = await AsyncStorage.getItem('drenas_id');
+          } catch {}
+        }
+        const hasEtab = !!(etabId && etabId.trim().length > 0);
+        const hasDrena = !!(drenaId && drenaId.trim().length > 0);
+        if (hasUser && hasEtab) {
+          setInitialRoute('Main');
+        } else if (hasUser && hasDrena) {
+          setInitialRoute('Main1');
+        } else {
+          setInitialRoute('Accueil');
+        }
       } catch (error) {
         console.error(
           "Erreur lors de l'initialisation de la base de données :",
@@ -633,30 +824,36 @@ function AppWrapper() {
   }
 
   return (
-    <NavigationContainer>
-      <NetworkSync />
+    <ThemePrefContext.Provider value={{mode: themeMode, toggle: toggleThemeMode, setMode: setThemeMode}}>
+    <PaperProvider theme={themeForProvider}>
+      <NavigationContainer>
+        <NetworkSync />
 
-      <Stack.Navigator screenOptions={{headerShown: false}}>
-        <Stack.Screen name="Accueil" component={Accueil} />
-        <Stack.Screen name="Guide" component={Guide} />
-        <Stack.Screen name="Accueil2" component={Accueil2} />
-        <Stack.Screen name="Contacteznous" component={Contacteznous} />
-        <Stack.Screen name="SendEmail" component={SendEmail} />
-        <Stack.Screen
-          name="RemiseEleveDetails"
-          component={RemiseEleveDetails}
-        />
-        <Stack.Screen name="RemiseCeDetails" component={RemiseCeDetails} />
-        <Stack.Screen
-          name="RetourEleveDetails"
-          component={RetourEleveDetails}
-        />
-        <Stack.Screen name="RetourCeDetails" component={RetourCeDetails} />
-        <Stack.Screen name="Login" component={Login} />
-        <Stack.Screen name="Main" component={DrawerScreens} />
-        <Stack.Screen name="Main1" component={DrawerScreens1} />
-      </Stack.Navigator>
-    </NavigationContainer>
+        <Stack.Navigator initialRouteName={initialRoute} screenOptions={{header: props => <AppHeader {...props} />, headerShown: true}}>
+          <Stack.Screen name="Accueil" component={Accueil} options={{headerShown: false}} />
+          <Stack.Screen name="Guide" component={Guide} options={{title: 'Guide utilisateur'}} />
+          <Stack.Screen name="Accueil2" component={Accueil2} options={{headerShown: false}} />
+          <Stack.Screen name="Contacteznous" component={Contacteznous} options={{title: 'Contactez-nous'}} />
+          <Stack.Screen name="SendEmail" component={SendEmail} options={{title: 'Envoyer un email'}} />
+          <Stack.Screen
+            name="RemiseEleveDetails"
+            component={RemiseEleveDetails}
+            options={{title: 'Détails remise élève'}}
+          />
+          <Stack.Screen name="RemiseCeDetails" component={RemiseCeDetails} options={{title: 'Détails remise CE'}} />
+          <Stack.Screen
+            name="RetourEleveDetails"
+            component={RetourEleveDetails}
+            options={{title: 'Détails retour élève'}}
+          />
+          <Stack.Screen name="RetourCeDetails" component={RetourCeDetails} options={{title: 'Détails retour CE'}} />
+          <Stack.Screen name="Login" component={Login} options={{title: 'Connexion', headerShown: false}} />
+          <Stack.Screen name="Main" component={DrawerScreens} options={{headerShown: false}} />
+          <Stack.Screen name="Main1" component={DrawerScreens1} options={{headerShown: false}} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </PaperProvider>
+    </ThemePrefContext.Provider>
   );
 }
 

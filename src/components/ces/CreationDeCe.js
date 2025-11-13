@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Modal,
 } from 'react-native';
+import {TextInput as PaperTextInput, Button as PaperButton} from 'react-native-paper';
 import uuid from 'react-native-uuid';
 import SQLite from 'react-native-sqlite-storage';
 import axios from 'axios';
@@ -297,15 +298,17 @@ const CreationDeCe = () => {
 
   return (
     <View style={styles.container}>
-      <TextInput
+      <PaperTextInput
+        mode="outlined"
         style={styles.searchInput}
         placeholder="Recherche rapide"
         value={searchText}
-        placeholderTextColor="black"
         onChangeText={handleSearch}
       />
 
-      <Button title="Ajouter une UE" onPress={() => openModal()} />
+      <PaperButton mode="contained" onPress={() => openModal()}>
+        Ajouter une UE
+      </PaperButton>
 
       <FlatList
         data={ues}
@@ -339,40 +342,43 @@ const CreationDeCe = () => {
       <Modal visible={modalVisible} transparent animationType="slide">
         <View style={styles.modalContainer}>
           <View style={styles.modal}>
-            <TextInput
+            <PaperTextInput
+              mode="outlined"
               style={styles.input}
               placeholder="Nom UE"
-              placeholderTextColor="black"
               value={denominationue}
               onChangeText={setDenominationue}
             />
-            <TextInput
+            <PaperTextInput
+              mode="outlined"
               style={styles.input}
               placeholder="Matricule Responsable"
-              placeholderTextColor="black"
               value={matricule}
               onChangeText={setMatricule}
             />
-            <TextInput
+            <PaperTextInput
+              mode="outlined"
               style={styles.input}
               placeholder="Nom Responsable"
-              placeholderTextColor="black"
               value={nom}
               onChangeText={setNom}
             />
-            <TextInput
+            <PaperTextInput
+              mode="outlined"
               style={styles.input}
               placeholder="Email Responsable"
-              placeholderTextColor="black"
               value={email}
               onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
             />
-            <TextInput
+            <PaperTextInput
+              mode="outlined"
               style={styles.input}
               placeholder="Contact"
-              placeholderTextColor="black"
               value={contact}
               onChangeText={setContact}
+              keyboardType="phone-pad"
             />
 
             <CustomPicker
@@ -400,8 +406,12 @@ const CreationDeCe = () => {
               onValueChange={setMatiere}
             />
 
-            <Button title="Enregistrer" onPress={saveUe} />
-            <Button title="Annuler" onPress={closeModal} />
+            <PaperButton mode="contained" onPress={saveUe}>
+              Enregistrer
+            </PaperButton>
+            <PaperButton style={{marginTop: 8}} onPress={closeModal}>
+              Annuler
+            </PaperButton>
           </View>
         </View>
       </Modal>
@@ -412,12 +422,7 @@ const CreationDeCe = () => {
 const styles = StyleSheet.create({
   container: {padding: 10, flex: 1, backgroundColor: '#fff'},
   searchInput: {
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
     marginBottom: 10,
-    paddingHorizontal: 8,
-    color: 'black',
   },
   card: {padding: 15, margin: 10, backgroundColor: '#eee', borderRadius: 10},
   title: {fontSize: 18, fontWeight: 'bold'},
@@ -433,12 +438,7 @@ const styles = StyleSheet.create({
   },
   modal: {backgroundColor: 'white', padding: 20, borderRadius: 10},
   input: {
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
     marginBottom: 8,
-    paddingHorizontal: 8,
-    color: 'black',
   },
 });
 

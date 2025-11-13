@@ -1,15 +1,6 @@
 import React, {useState, useEffect, useCallback} from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Modal,
-  TextInput,
-  Button,
-  Alert,
-} from 'react-native';
+import {View, Text, FlatList, TouchableOpacity, StyleSheet, Modal, Alert} from 'react-native';
+import {TextInput as PaperTextInput, Button as PaperButton, List, Divider} from 'react-native-paper';
 import uuid from 'react-native-uuid';
 import {db} from '../../db/database';
 import CustomPicker from '../CustomPicker';
@@ -353,37 +344,32 @@ const CeInscritsvalidation = () => {
   }, [etablissementId]);
 
   const renderItem = ({item}) => (
-    <View style={styles.card}>
-      <Text style={styles.title}>{item.ues_nom}</Text>
-      {item.details.length > 0 ? (
+    <List.Item
+      title={item.ues_nom}
+      titleNumberOfLines={3}
+      titleEllipsizeMode="tail"
+      description={() => (
         <View>
-          {item.details.map((d, i) => (
-            <Text key={i}>
-              📘 {d.manuel_nom} — {d.nombremanuel}
-            </Text>
-          ))}
+          {item.details.length > 0 ? (
+            <View>
+              {item.details.map((d, i) => (
+                <Text key={i}>📘 {d.manuel_nom} — {d.nombremanuel}</Text>
+              ))}
+            </View>
+          ) : (
+            <Text style={{color: '#888'}}>Aucun manuel ajouté.</Text>
+          )}
         </View>
-      ) : (
-        <Text style={{color: '#888'}}>Aucun manuel ajouté.</Text>
       )}
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => confirmValidation(item.id)}>
-          <Text>✅ Valider</Text>
-        </TouchableOpacity>
-        {/* <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => {
-            setSelectedCommande(item);
-            setUesId(item.ues_id);
-            setNombreTotalManuel(item.nombretotalmanuel.toString());
-            setModalVisible(true);
-          }}>
-          <Text>🛠 Modifier les détails</Text>
-        </TouchableOpacity>*/}
-      </View>
-    </View>
+      left={props => <List.Icon {...props} icon="account-group" />}
+      right={props => (
+        <View style={{justifyContent: 'center'}}>
+          <PaperButton mode="contained" onPress={() => confirmValidation(item.id)}>
+            Valider
+          </PaperButton>
+        </View>
+      )}
+    />
   );
 
   return (
@@ -391,6 +377,7 @@ const CeInscritsvalidation = () => {
       <FlatList
         data={commandes}
         keyExtractor={item => item.id.toString()}
+        ItemSeparatorComponent={Divider}
         renderItem={renderItem}
       />
       <Modal visible={modalVisible} animationType="slide">
@@ -402,14 +389,17 @@ const CeInscritsvalidation = () => {
             selectedValue={uesId}
             placeholder="Choisir UES"
           />
-          <TextInput
+          <PaperTextInput
+            mode="outlined"
             style={styles.input}
             value={nombretotalmanuel}
             onChangeText={setNombreTotalManuel}
             placeholder="Total manuels"
             keyboardType="numeric"
           />
-          <Button title="Enregistrer" onPress={() => setModalVisible(false)} />
+          <PaperButton mode="contained" onPress={() => setModalVisible(false)}>
+            Enregistrer
+          </PaperButton>
         </View>
       </Modal>
     </View>
@@ -431,7 +421,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   actionButton: {backgroundColor: '#ddd', padding: 8, borderRadius: 5},
-  input: {borderWidth: 1, borderColor: '#ccc', padding: 8, marginVertical: 10},
+  input: {marginVertical: 10},
 });
 
 export default CeInscritsvalidation;

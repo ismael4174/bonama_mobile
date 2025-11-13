@@ -1,14 +1,7 @@
 import React, {useState, useEffect, useCallback, useMemo} from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Modal,
-  TextInput,
-  Button,
-} from 'react-native';
+import {View, Text, FlatList, TouchableOpacity, StyleSheet, Modal, Button} from 'react-native';
+import {TextInput as PaperTextInput, List, Divider} from 'react-native-paper';
+import EmptyState from '../ui/EmptyState';
 import uuid from 'react-native-uuid';
 import {db} from '../../db/database';
 import SQLite from 'react-native-sqlite-storage';
@@ -439,38 +432,42 @@ const CeInscrits = () => {
         </Text>
       </View>
 
-      <TextInput
+      <PaperTextInput
+        mode="outlined"
         style={styles.searchInput}
         placeholder="Recherche rapide"
         value={searchText}
         onChangeText={text => {
           setSearchText(text);
-          // tu peux appeler handleSearch ici si nécessaire
         }}
-        placeholderTextColor="black"
+        left={<PaperTextInput.Icon icon="magnify" />}
       />
 
       <FlatList
         data={memoizedCommandes}
         keyExtractor={item => item.id.toString()}
         contentContainerStyle={styles.listContent}
+        ItemSeparatorComponent={Divider}
+        ListEmptyComponent={<EmptyState title="Aucune commande" subtitle="Aucune souscription CE trouvée" />}
         renderItem={({item}) => (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>CE: {item.ues_name}</Text>
-
-            {item.details.map(detail => (
-              <View key={detail.id} style={styles.detailItem}>
-                <Text style={styles.detailText}>
-                  Manuel :{' '}
-                  {manuels.find(m => m.id === detail.manuels_id)?.titre ||
-                    'Inconnu'}
-                </Text>
-                <Text style={styles.detailText}>
-                  Quantité : {detail.nombremanuel}
-                </Text>
+          <List.Item
+            title={`CE: ${item.ues_name}`}
+            titleNumberOfLines={3}
+            titleEllipsizeMode="tail"
+            description={() => (
+              <View>
+                {item.details.map(detail => (
+                  <View key={detail.id} style={styles.detailItem}>
+                    <Text style={styles.detailText}>
+                      Manuel: {manuels.find(m => m.id === detail.manuels_id)?.titre || 'Inconnu'}
+                    </Text>
+                    <Text style={styles.detailText}>Quantité: {detail.nombremanuel}</Text>
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
+            )}
+            left={props => <List.Icon {...props} icon="account-group" />}
+          />
         )}
       />
 
@@ -501,13 +498,7 @@ const styles = StyleSheet.create({
     color: '#ffd700', // jaune pour le chiffre
   },
   searchInput: {
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
-    borderRadius: 8,
     marginBottom: 12,
-    paddingHorizontal: 10,
-    color: 'black',
   },
   listContent: {
     paddingBottom: 100,

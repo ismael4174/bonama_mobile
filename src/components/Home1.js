@@ -1,11 +1,13 @@
 import React, {useState, useEffect, useCallback} from 'react';
 import {View, Text, ScrollView, StyleSheet} from 'react-native';
+import {Surface, Avatar, useTheme} from 'react-native-paper';
 import {db} from '../db/database';
 import useAnneescolairesID from '../parametres/anneescolaire.js';
 import useDrenaId from '../parametres/drena.js';
 import {useRefresh} from '../db/refreshContext.js'; // 👈 ajout pour refresh global
 
 export default function Home1() {
+  const theme = useTheme();
   const [annees, setAnnees] = useState([]);
   const [cesouscrit, setCesouscrit] = useState(0);
   const [elevesouscrit, setElevesouscrit] = useState(0);
@@ -115,25 +117,37 @@ export default function Home1() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.titre}>DRENA</Text>
+      <Surface style={styles.card}>
+        <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 6}}>
+          <Avatar.Icon size={32} icon="home-city" />
+          <Text style={[styles.titre, {marginLeft: 8, color: theme.colors.primary}]}>DRENA</Text>
+        </View>
         <Text style={styles.text}>{drena(drenasID)}</Text>
-      </View>
-      <View style={styles.card}>
-        <Text style={styles.titre}>ANNEE SCOLAIRE</Text>
+      </Surface>
+      <Surface style={styles.card}>
+        <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 6}}>
+          <Avatar.Icon size={32} icon="calendar" />
+          <Text style={[styles.titre, {marginLeft: 8, color: theme.colors.primary}]}>ANNEE SCOLAIRE</Text>
+        </View>
         <Text style={styles.text}>{anneescolaire(anneescolairesID)}</Text>
-      </View>
-      <View style={styles.card}>
-        <Text style={styles.titre}>SOUSCRIPTEURS</Text>
+      </Surface>
+      <Surface style={styles.card}>
+        <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 6}}>
+          <Avatar.Icon size={32} icon="account-group" />
+          <Text style={[styles.titre, {marginLeft: 8, color: theme.colors.primary}]}>SOUSCRIPTEURS</Text>
+        </View>
         <Text style={styles.text}>CE : {cesouscrit}</Text>
         <Text style={styles.text}>Elèves : {elevesouscrit}</Text>
-      </View>
-      <View style={styles.card}>
-        <Text style={styles.titre}>MANUELS kit(s)</Text>
+      </Surface>
+      <Surface style={styles.card}>
+        <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 6}}>
+          <Avatar.Icon size={32} icon="book" />
+          <Text style={[styles.titre, {marginLeft: 8, color: theme.colors.primary}]}>MANUELS kit(s)</Text>
+        </View>
         <Text style={styles.text}>6ème : {safeDivide(manueletab6, 8)}</Text>
         <Text style={styles.text}>5ème : {safeDivide(manueletab5, 8)}</Text>
         <Text style={styles.text}>Total : {safeDivide(manueletab, 8)}</Text>
-      </View>
+      </Surface>
     </ScrollView>
   );
 }
