@@ -1,12 +1,12 @@
 import React, {useState, useEffect, useCallback} from 'react';
 import {View, Text, ScrollView, StyleSheet} from 'react-native';
-import {Surface, Avatar, useTheme} from 'react-native-paper';
+import {Surface, Avatar, useTheme, Button as PaperButton} from 'react-native-paper';
 import {db} from '../db/database';
 import useAnneescolairesID from '../parametres/anneescolaire.js';
 import useDrenaId from '../parametres/drena.js';
 import {useRefresh} from '../db/refreshContext.js'; // 👈 ajout pour refresh global
 
-export default function Home1() {
+export default function Home1({navigation}) {
   const theme = useTheme();
   const [annees, setAnnees] = useState([]);
   const [cesouscrit, setCesouscrit] = useState(0);
@@ -78,6 +78,38 @@ export default function Home1() {
           params: [drenasID],
           setter: setManueletab,
         },
+        // Remises agrégées par DRENA
+        {
+          sql: 'SELECT COUNT(manuelseleves.id) AS NBRE FROM manuelseleves JOIN elevesinscrits ON elevesinscrits.id = manuelseleves.elevesinscrits_id JOIN manuels ON manuels.id=manuelseleves.manuels_id JOIN etablissements ON etablissements.id = elevesinscrits.etablissements_id WHERE manuels.classes_id=2 AND manuelseleves.exemplairemanuelseleve_id IS NOT NULL AND etablissements.drenas_id = ? AND elevesinscrits.anneescolaires_id=?;',
+          params: [drenasID, anneescolairesID],
+          setter: setManuelremiseleve5,
+        },
+        {
+          sql: 'SELECT COUNT(manuelseleves.id) AS NBRE FROM manuelseleves JOIN elevesinscrits ON elevesinscrits.id = manuelseleves.elevesinscrits_id JOIN manuels ON manuels.id=manuelseleves.manuels_id JOIN etablissements ON etablissements.id = elevesinscrits.etablissements_id WHERE manuels.classes_id=1 AND manuelseleves.exemplairemanuelseleve_id IS NOT NULL AND etablissements.drenas_id = ? AND elevesinscrits.anneescolaires_id=?;',
+          params: [drenasID, anneescolairesID],
+          setter: setManuelremiseleve6,
+        },
+        {
+          sql: 'SELECT COUNT(manuelseleves.id) AS NBRE FROM manuelseleves JOIN elevesinscrits ON elevesinscrits.id = manuelseleves.elevesinscrits_id JOIN manuels ON manuels.id=manuelseleves.manuels_id JOIN etablissements ON etablissements.id = elevesinscrits.etablissements_id WHERE manuelseleves.exemplairemanuelseleve_id IS NOT NULL AND etablissements.drenas_id = ? AND elevesinscrits.anneescolaires_id=?;',
+          params: [drenasID, anneescolairesID],
+          setter: setManuelremiseleve,
+        },
+        // Retours agrégés par DRENA
+        {
+          sql: 'SELECT COUNT(manuelseleves.id) AS NBRE FROM manuelseleves JOIN elevesinscrits ON elevesinscrits.id = manuelseleves.elevesinscrits_id JOIN manuels ON manuels.id=manuelseleves.manuels_id JOIN etablissements ON etablissements.id = elevesinscrits.etablissements_id WHERE manuels.classes_id=2 AND manuelseleves.etatmanuelsretoureleve_id IN (1,2,3,4) AND etablissements.drenas_id = ? AND elevesinscrits.anneescolaires_id=?;',
+          params: [drenasID, anneescolairesID],
+          setter: setManuelretoureleve5,
+        },
+        {
+          sql: 'SELECT COUNT(manuelseleves.id) AS NBRE FROM manuelseleves JOIN elevesinscrits ON elevesinscrits.id = manuelseleves.elevesinscrits_id JOIN manuels ON manuels.id=manuelseleves.manuels_id JOIN etablissements ON etablissements.id = elevesinscrits.etablissements_id WHERE manuels.classes_id=1 AND manuelseleves.etatmanuelsretoureleve_id IN (1,2,3,4) AND etablissements.drenas_id = ? AND elevesinscrits.anneescolaires_id=?;',
+          params: [drenasID, anneescolairesID],
+          setter: setManuelretoureleve6,
+        },
+        {
+          sql: 'SELECT COUNT(manuelseleves.id) AS NBRE FROM manuelseleves JOIN elevesinscrits ON elevesinscrits.id = manuelseleves.elevesinscrits_id JOIN manuels ON manuels.id=manuelseleves.manuels_id JOIN etablissements ON etablissements.id = elevesinscrits.etablissements_id WHERE manuelseleves.etatmanuelsretoureleve_id IN (1,2,3,4) AND etablissements.drenas_id = ? AND elevesinscrits.anneescolaires_id=?;',
+          params: [drenasID, anneescolairesID],
+          setter: setManuelretoureleve,
+        },
         {
           sql: 'SELECT id, nometablissement FROM etablissements WHERE etablissements.drenas_id=?;',
           params: [drenasID],
@@ -138,6 +170,11 @@ export default function Home1() {
         </View>
         <Text style={styles.text}>CE : {cesouscrit}</Text>
         <Text style={styles.text}>Elèves : {elevesouscrit}</Text>
+        {!!navigation && (
+          <PaperButton style={{marginTop: 8}} mode="outlined" onPress={() => navigation.navigate('Souscriptions')}>
+            Voir souscriptions
+          </PaperButton>
+        )}
       </Surface>
       <Surface style={styles.card}>
         <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 6}}>
@@ -147,6 +184,11 @@ export default function Home1() {
         <Text style={styles.text}>6ème : {safeDivide(manueletab6, 8)}</Text>
         <Text style={styles.text}>5ème : {safeDivide(manueletab5, 8)}</Text>
         <Text style={styles.text}>Total : {safeDivide(manueletab, 8)}</Text>
+        {!!navigation && (
+          <PaperButton style={{marginTop: 8}} mode="outlined" onPress={() => navigation.navigate('Liste des manuels')}>
+            Voir liste des manuels
+          </PaperButton>
+        )}
       </Surface>
     </ScrollView>
   );

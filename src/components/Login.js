@@ -1,5 +1,5 @@
-import React, {useState, useEffect} from 'react';
-import {View, StyleSheet, Alert, KeyboardAvoidingView, Platform, Image, Dimensions} from 'react-native';
+import React, {useState, useEffect, useRef} from 'react';
+import {View, StyleSheet, Alert, KeyboardAvoidingView, Platform, Image, Dimensions, ScrollView, Keyboard} from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import {
   Text,
@@ -75,13 +75,48 @@ const Login = ({navigation}) => {
 
   const screenHeight = Dimensions.get('window').height;
   const HERO_HEIGHT = Math.round(screenHeight * (screenHeight < 700 ? 0.52 : 0.6));
+  const [keyboardPadding, setKeyboardPadding] = useState(0);
+  const scrollRef = useRef(null);
+  const passwordRef = useRef(null);
+  const [usernameY, setUsernameY] = useState(0);
+  const [passwordY, setPasswordY] = useState(0);
+  const [heroHeight, setHeroHeight] = useState(HERO_HEIGHT);
+
+  useEffect(() => {
+    const onShow = (e) => {
+      const h = e?.endCoordinates?.height || 0;
+      setKeyboardPadding(h);
+      const reduced = Math.round(screenHeight * (screenHeight < 700 ? 0.38 : 0.46));
+      setHeroHeight(reduced);
+    };
+    const onHide = () => {
+      setKeyboardPadding(0);
+      setHeroHeight(HERO_HEIGHT);
+    };
+    const subShow = Platform.OS === 'ios' ? Keyboard.addListener('keyboardWillShow', onShow) : Keyboard.addListener('keyboardDidShow', onShow);
+    const subHide = Platform.OS === 'ios' ? Keyboard.addListener('keyboardWillHide', onHide) : Keyboard.addListener('keyboardDidHide', onHide);
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, []);
 
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.scroll}>
+      <ScrollView
+        ref={scrollRef}
+        style={{flex: 1}}
+        contentContainerStyle={[styles.scroll, {paddingBottom: 120 + keyboardPadding, minHeight: screenHeight}]}
+        keyboardShouldPersistTaps="always"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        automaticallyAdjustKeyboardInsets
+        contentInsetAdjustmentBehavior={Platform.OS === 'ios' ? 'automatic' : undefined}
+        scrollEventThrottle={16}
+        nestedScrollEnabled
+      >
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator animating size="large" />
@@ -100,7 +135,7 @@ const Login = ({navigation}) => {
               iconColor="#FFFFFF"
               accessibilityLabel="Revenir à l'accueil"
             />
-            <Image source={require('./login.jpg')} style={[styles.heroImage, {height: HERO_HEIGHT}]} accessibilityLabel="Illustration de manuels scolaires" />
+            <Image source={require('./login.jpg')} style={[styles.heroImage, {height: heroHeight}]} accessibilityLabel="Illustration de manuels scolaires" />
             <LinearGradient
               colors={["rgba(0,0,0,0.0)", "rgba(0,0,0,0.45)"]}
               style={styles.heroOverlay}
@@ -116,39 +151,47 @@ const Login = ({navigation}) => {
             >
               Connexion
             </Text>
-          <TextInput
-            mode="flat"
-            style={styles.input}
-            label="Nom d'utilisateur"
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-            autoComplete="username"
-            textContentType="username"
-            returnKeyType="next"
-            left={<TextInput.Icon icon="account" />}
-            error={!!usernameError}
-            underlineColor="#9CA3AF"
-            activeUnderlineColor="#2563EB"
-            accessibilityLabel="Champ nom d'utilisateur"
-            accessibilityHint="Saisissez votre nom d'utilisateur"
-          />
+          <View onLayout={(e) => setUsernameY(e.nativeEvent.layout.y)}>
+            <TextInput
+              mode="flat"
+              style={styles.input}
+              label="Nom d'utilisateur"
+              value={username}
+              onChangeText={setUsername}
+              onFocus={() => scrollRef.current?.scrollTo({y: Math.max(0, usernameY - 24), animated: true})}
+              autoCapitalize="none"
+              autoComplete="username"
+              textContentType="username"
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => passwordRef.current?.focus()}
+              left={<TextInput.Icon icon="account" />}
+              error={!!usernameError}
+              underlineColor="#9CA3AF"
+              activeUnderlineColor="#2563EB"
+              accessibilityLabel="Champ nom d'utilisateur"
+              accessibilityHint="Saisissez votre nom d'utilisateur"
+            />
+          </View>
           <HelperText type="error" visible={!!usernameError}>
             Nom d'utilisateur requis
           </HelperText>
-          <TextInput
-            mode="flat"
-            style={styles.input}
-            label="Mot de passe"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!showPassword}
-            autoComplete="password"
-            textContentType="password"
-            returnKeyType="go"
-            onSubmitEditing={handleLogin}
-            left={<TextInput.Icon icon="lock" />}
-            right={
+          <View onLayout={(e) => setPasswordY(e.nativeEvent.layout.y)}>
+            <TextInput
+              ref={passwordRef}
+              mode="flat"
+              style={styles.input}
+              label="Mot de passe"
+              value={password}
+              onChangeText={setPassword}
+              onFocus={() => scrollRef.current?.scrollTo({y: Math.max(0, passwordY - 24), animated: true})}
+              secureTextEntry={!showPassword}
+              autoComplete="password"
+              textContentType="password"
+              returnKeyType="go"
+              onSubmitEditing={handleLogin}
+              left={<TextInput.Icon icon="lock" />}
+              right={
               <TextInput.Icon
                 icon={showPassword ? 'eye-off' : 'eye'}
                 onPress={() => setShowPassword(prev => !prev)}
@@ -163,6 +206,7 @@ const Login = ({navigation}) => {
             accessibilityLabel="Champ mot de passe"
             accessibilityHint="Saisissez votre mot de passe"
           />
+          </View>
           <HelperText type="error" visible={!!passwordError}>
             Mot de passe requis
           </HelperText>
@@ -180,10 +224,11 @@ const Login = ({navigation}) => {
           >
             Se connecter
           </Button>
+          <View style={{height: 24}} />
           </Surface>
         </View>
       )}
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 };
@@ -195,7 +240,6 @@ const styles = StyleSheet.create({
     // padding: 16,
   },
   scroll: {
-    flexGrow: 1,
     justifyContent: 'flex-start',
   },
   card: {
