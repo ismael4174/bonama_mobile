@@ -14,7 +14,7 @@ const ManuelEleves = ({navigation, route}) => {
   const [eleves, setEleves] = useState([]);
   const [stockmanuels, setStockmanuels] = useState([]);
   const [mesManuels, setMesManuels] = useState([]);
-  const [isLocked, setIsLocked] = useState(true);
+  const [isLocked, setIsLocked] = useState(true); // verrouillé par défaut, mis à jour selon retourfinalise
   const [formData, setFormData] = useState({
     manuels_id: '',
     elevesinscrits_id: '',
@@ -46,9 +46,18 @@ const ManuelEleves = ({navigation, route}) => {
       );
       // Eleves
       tx.executeSql(
-        'SELECT elevesinscrits.id, eleves.matriculeeleve, eleves.nomeleve, eleves.prenomseleve FROM elevesinscrits JOIN eleves ON eleves.id = elevesinscrits.eleves_id;',
+        'SELECT elevesinscrits.id, elevesinscrits.retourfinalise, eleves.matriculeeleve, eleves.nomeleve, eleves.prenomseleve FROM elevesinscrits JOIN eleves ON eleves.id = elevesinscrits.eleves_id;',
         [],
-        (_, results) => setEleves(results.rows.raw()),
+        (_, results) => {
+          const rows = results.rows.raw();
+          setEleves(rows);
+          if (eleveInscritId) {
+            const current = rows.find(e => e.id === eleveInscritId);
+            if (current) {
+              setIsLocked(current.retourfinalise === 1);
+            }
+          }
+        },
         error => console.log('Erreur chargement eleves:', error),
       );
       // Manuels
@@ -99,35 +108,110 @@ const ManuelEleves = ({navigation, route}) => {
                 results.rows.item(0).nbremanuelsrenseignes;
 
               if (nbreManuel === nbremanuelsrenseignes) {
+                // Tous les manuels ont un état au retour: appliquer la logique de pénalité
+                // 1) Récupérer le coût du manuel depuis parametrages
                 tx.executeSql(
-                  'SELECT uuid FROM elevesinscrits WHERE id = ?',
-                  [eleveInscritId],
-                  (_, results) => {
-                    let uuid1 = results.rows.item(0)?.uuid;
-                    if (!uuid1) {
-                      uuid1 = uuid.v4();
-                      tx.executeSql(
-                        'UPDATE elevesinscrits SET uuid = ? WHERE id = ?',
-                        [uuid1, eleveInscritId],
-                      );
-                    }
+                  'SELECT coutmanuel FROM parametrages WHERE id = 1',
+                  [],
+                  (_, resParam) => {
+                    const coutmanuel = resParam.rows.item(0)?.coutmanuel || 0;
+
+                    // 2) Récupérer les manuels de l'élève avec le coefficient de pénalité
                     tx.executeSql(
-                      'UPDATE elevesinscrits SET retourfinalise = 1 WHERE id = ?',
+                      `SELECT m.id, m.exemplairemanuelseleve_id, m.etatmanuelsretoureleve_id,
+                              em.penalite AS coefPenalite
+                       FROM manuelseleves m
+                       LEFT JOIN etatmanuels em ON em.id = m.etatmanuelsretoureleve_id
+                       WHERE m.elevesinscrits_id = ?`,
                       [eleveInscritId],
-                      () => {
+                      (_, resManuels) => {
+                        const rows = resManuels.rows.raw();
+                        let totalPenalite = 0;
+
+                        // 3) Parcourir les manuels et calculer les pénalités
+                        rows.forEach(m => {
+                          if (m.exemplairemanuelseleve_id && m.etatmanuelsretoureleve_id) {
+                            const coef = m.coefPenalite || 0;
+                            const montant = coutmanuel * coef;
+                            totalPenalite += montant;
+
+                            const rendu =
+                              m.etatmanuelsretoureleve_id === 6 ? 0 : 1;
+
+                            // Mettre à jour le manuel: montantpenalite et rendu
+                            tx.executeSql(
+                              'UPDATE manuelseleves SET montantpenalite = ?, rendu = ? WHERE id = ?',
+                              [montant, rendu, m.id],
+                            );
+
+                            // Mettre à jour l'exemplaire: toujours l'état, le statut seulement si non PERDU
+                            if (m.etatmanuelsretoureleve_id === 6) {
+                              tx.executeSql(
+                                'UPDATE stockmanuels SET etatmanuels_id = ? WHERE id = ?',
+                                [
+                                  m.etatmanuelsretoureleve_id,
+                                  m.exemplairemanuelseleve_id,
+                                ],
+                              );
+                            } else {
+                              tx.executeSql(
+                                'UPDATE stockmanuels SET statutmanules_id = 1, etatmanuels_id = ? WHERE id = ?',
+                                [
+                                  m.etatmanuelsretoureleve_id,
+                                  m.exemplairemanuelseleve_id,
+                                ],
+                              );
+                            }
+                          }
+                        });
+
+                        // 4) Mettre à jour la pénalité totale sur elevesinscrits
                         tx.executeSql(
-                          'INSERT INTO sync_log (uuid,source, table_name, record_id, action, data) VALUES (?, ?, ?, ?, ?, ?)',
-                          [
-                            uuid1,
-                            'local',
-                            'elevesinscrits',
-                            eleveInscritId,
-                            'update',
-                            JSON.stringify({retourfinalise: 1}),
-                          ],
+                          'UPDATE elevesinscrits SET penalite = ? WHERE id = ?',
+                          [totalPenalite, eleveInscritId],
                           () => {
-                            Alert.alert('Succès', 'La remise a été finalisée.');
-                            navigation.goBack();
+                            // 5) Finaliser le retour (UUID, retourfinalise, sync_log)
+                            tx.executeSql(
+                              'SELECT uuid FROM elevesinscrits WHERE id = ?',
+                              [eleveInscritId],
+                              (_, results) => {
+                                let uuid1 = results.rows.item(0)?.uuid;
+                                if (!uuid1) {
+                                  uuid1 = uuid.v4();
+                                  tx.executeSql(
+                                    'UPDATE elevesinscrits SET uuid = ? WHERE id = ?',
+                                    [uuid1, eleveInscritId],
+                                  );
+                                }
+                                tx.executeSql(
+                                  'UPDATE elevesinscrits SET retourfinalise = 1 WHERE id = ?',
+                                  [eleveInscritId],
+                                  () => {
+                                    tx.executeSql(
+                                      'INSERT INTO sync_log (uuid,source, table_name, record_id, action, data) VALUES (?, ?, ?, ?, ?, ?)',
+                                      [
+                                        uuid1,
+                                        'local',
+                                        'elevesinscrits',
+                                        eleveInscritId,
+                                        'update',
+                                        JSON.stringify({
+                                          retourfinalise: 1,
+                                          penalite: totalPenalite,
+                                        }),
+                                      ],
+                                      () => {
+                                        Alert.alert(
+                                          'Succès',
+                                          'Le retour a été finalisée.',
+                                        );
+                                        navigation.goBack();
+                                      },
+                                    );
+                                  },
+                                );
+                              },
+                            );
                           },
                         );
                       },
@@ -261,7 +345,7 @@ const ManuelEleves = ({navigation, route}) => {
       {/* Boutons */}
       <View style={styles.buttonGroup}>
         <View style={styles.buttonWrapper}>
-          <PaperButton onPress={() => navigation.goBack()}>Retour</PaperButton>
+          <PaperButton onPress={() => navigation.goBack()}>Précédent</PaperButton>
         </View>
         <View style={styles.buttonWrapper}>
           <PaperButton mode="contained" onPress={handleFinaliserRetour}>
@@ -324,26 +408,28 @@ const ManuelEleves = ({navigation, route}) => {
               <Text style={styles.title}>État Retour: {monetatretour}</Text>
 
               <View style={styles.actions}>
-                <TouchableOpacity
-                  onPress={() => {
-                    setEditingManuel(item);
-                    setFormData({
-                      id: item.id,
-                      manuels_id: item.manuels_id ?? '',
-                      elevesinscrits_id: item.elevesinscrits_id ?? '',
-                      exemplairemanuelseleve_id:
-                        item.exemplairemanuelseleve_id ?? '',
-                      etatmanuelsremiseeleve_id:
-                        item.etatmanuelsremiseeleve_id ?? '',
-                      etatmanuelsretoureleve_id:
-                        item.etatmanuelsretoureleve_id ?? '',
-                      montantpenalite: item.montantpenalite ?? '',
-                      rendu: item.rendu === 1,
-                    });
-                    setModalVisible(true);
-                  }}>
-                  <Text style={styles.actionIcon}>✏️</Text>
-                </TouchableOpacity>
+                {!isLocked && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setEditingManuel(item);
+                      setFormData({
+                        id: item.id,
+                        manuels_id: item.manuels_id ?? '',
+                        elevesinscrits_id: item.elevesinscrits_id ?? '',
+                        exemplairemanuelseleve_id:
+                          item.exemplairemanuelseleve_id ?? '',
+                        etatmanuelsremiseeleve_id:
+                          item.etatmanuelsremiseeleve_id ?? '',
+                        etatmanuelsretoureleve_id:
+                          item.etatmanuelsretoureleve_id ?? '',
+                        montantpenalite: item.montantpenalite ?? '',
+                        rendu: item.rendu === 1,
+                      });
+                      setModalVisible(true);
+                    }}>
+                    <Text style={styles.actionIcon}>✏️</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           );
@@ -369,7 +455,7 @@ const ManuelEleves = ({navigation, route}) => {
               onValueChange={value =>
                 setFormData({...formData, elevesinscrits_id: value})
               }
-              isDisabled={isLocked}
+              isDisabled={true}
             />
 
             <Text>Manuel</Text>
@@ -382,7 +468,7 @@ const ManuelEleves = ({navigation, route}) => {
               }
               displayKey="label"
               valueKey="value"
-              isDisabled={isLocked}
+              isDisabled={true}
             />
 
             <Text>Référence</Text>
@@ -398,7 +484,7 @@ const ManuelEleves = ({navigation, route}) => {
               }
               displayKey="label"
               valueKey="value"
-              isDisabled={isLocked}
+              isDisabled={true}
             />
 
             <Text>État à la remise</Text>
@@ -414,24 +500,26 @@ const ManuelEleves = ({navigation, route}) => {
               }
               displayKey="label"
               valueKey="value"
-              isDisabled={isLocked}
+              isDisabled={true}
             />
 
             <Text>État au retour</Text>
             <CustomPicker
-              label="État Retour"
+              label="État au Retour"
               items={etatmanuels
-                .filter(etat => [1, 2, 6].includes(etat.id))
+                .filter(etat => [2, 3, 6].includes(etat.id))
                 .map(etat => ({label: etat.etatmanuel, value: etat.id}))}
+              placeholder="Sélectionner un état"
               selectedId={formData.etatmanuelsretoureleve_id}
               onValueChange={value =>
                 setFormData({...formData, etatmanuelsretoureleve_id: value})
               }
               displayKey="label"
               valueKey="value"
+              isDisabled={isLocked}
             />
 
-            <View style={{flexDirection: 'row', alignItems: 'center'}}>
+            {/* <View style={{flexDirection: 'row', alignItems: 'center'}}>
               <Text>Rendu :</Text>
               <Switch
                 value={formData?.rendu || false}
@@ -439,7 +527,7 @@ const ManuelEleves = ({navigation, route}) => {
                   setFormData({...formData, rendu: value})
                 }
               />
-            </View>
+            </View> */}
 
             <PaperButton mode="contained" onPress={handleSave}>
               Enregistrer
@@ -492,15 +580,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
   modal: {backgroundColor: 'white', padding: 20, borderRadius: 10},
-  input: {
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
-    marginBottom: 8,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    color: 'black',
-  },
+  
 });
 
 export default ManuelEleves;

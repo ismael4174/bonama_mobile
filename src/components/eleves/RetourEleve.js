@@ -9,6 +9,7 @@ import {db} from '../../db/database';
 import useAnneescolairesID from '../../parametres/anneescolaire.js';
 import useEtablissementId from '../../parametres/etablissement.js';
 import RemiseEleveDetails from './RemiseEleveDetails';
+import {useFocusEffect} from '@react-navigation/native';
 
 const ElevesInscrits = ({navigation}) => {
   const [eleves, setEleves] = useState([]);
@@ -261,26 +262,29 @@ const ElevesInscrits = ({navigation}) => {
                 ei.souscrit,
                 ei.nombremanuelsremiseleve,
                 d.designation AS drena,
-                ei.remisefinalise
+                ei.remisefinalise,
+                ei.retourfinalise
             FROM elevesinscrits ei
             JOIN anneescolaires a ON ei.anneescolaires_id = a.id
             JOIN eleves e ON ei.eleves_id = e.id
             JOIN etablissements et ON ei.etablissements_id = et.id
             JOIN classes c ON ei.classes_id = c.id
             JOIN drenas d ON et.drenas_id = d.id
-            WHERE ei.presouscrit = 1 AND ei.anneescolaires_id = ? AND ei.etablissements_id = ?
+            WHERE ei.remisefinalise = 1 AND ei.anneescolaires_id = ? AND ei.etablissements_id = ?
         `;
 
       let params = [anneescolairesID, etablissementsID];
 
       if (searchText) {
-        query += ` AND (e.nomeleve LIKE ? OR e.matriculeeleve LIKE ? OR e.prenomseleve LIKE ?)`;
-        params = [
-          ...params,
-          `%${searchText}%`,
-          `%${searchText}%`,
-          `%${searchText}%`,
-        ];
+        query += ` AND (
+    UPPER(e.nomeleve) LIKE ?
+    OR UPPER(e.prenomseleve) LIKE ?
+    OR UPPER(e.matriculeeleve) LIKE ?
+    OR UPPER(COALESCE(e.nomeleve,'') || ' ' || COALESCE(e.prenomseleve,'')) LIKE ?
+  )`;
+
+        const like = `%${searchText.toUpperCase()}%`;
+        params.push(like, like, like, like);
       }
 
       tx.executeSql(
@@ -330,6 +334,12 @@ const ElevesInscrits = ({navigation}) => {
   useEffect(() => {
     fetchElevesInscrits();
   }, [fetchElevesInscrits]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchElevesInscrits();
+    }, [fetchElevesInscrits]),
+  );
 
   const handleFinaliserRetour = useCallback(item => {
     setSelectedEleve(item);
@@ -384,14 +394,27 @@ const ElevesInscrits = ({navigation}) => {
               <View style={{justifyContent: 'center'}}>
                 {item.retourfinalise === 1 ? (
                   <View style={{flexDirection: 'row', gap: 8}}>
-                    <PaperButton mode="contained" disabled>Déjà finalisée</PaperButton>
-                    <PaperButton mode="outlined" onPress={() => handleTelechargerPDF(item)}>Reçu</PaperButton>
+                    <PaperButton
+                                        mode="contained"
+                                        disabled
+                                        compact
+                                        style={{paddingHorizontal: 4, paddingVertical: 0, minWidth: 10}}
+                                        labelStyle={{fontSize: 10}}>
+                                        Déjà retournés
+                                      </PaperButton>
+                    {/* <PaperButton
+                      mode="outlined"
+                      onPress={() => handleTelechargerPDF(item)}>
+                      Reçu
+                    </PaperButton> */}
                   </View>
                 ) : (
                   <PaperButton
                     mode="contained"
                     onPress={() =>
-                      navigation.navigate('RetourEleveDetails', {eleveInscritId: item.id})
+                      navigation.navigate('RetourEleveDetails', {
+                        eleveInscritId: item.id,
+                      })
                     }>
                     Editer
                   </PaperButton>

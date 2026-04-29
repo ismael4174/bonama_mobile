@@ -135,12 +135,20 @@ const Login = ({navigation}) => {
               iconColor="#FFFFFF"
               accessibilityLabel="Revenir à l'accueil"
             />
-            <Image source={require('./login.jpg')} style={[styles.heroImage, {height: heroHeight}]} accessibilityLabel="Illustration de manuels scolaires" />
+            <Image source={('')} style={[styles.heroImage, {height: heroHeight}]} accessibilityLabel="Illustration de manuels scolaires" />
             <LinearGradient
-              colors={["rgba(0,0,0,0.0)", "rgba(0,0,0,0.45)"]}
+              colors={["#FFFFFF", "#D81B60"]}
               style={styles.heroOverlay}
               pointerEvents="none"
-            />
+            >
+              <View style={styles.logoCircle}>
+                <Image
+                  source={require('./logobonamas.png')}
+                  style={styles.logoImage}
+                  accessibilityLabel="Logo BONAMAS"
+                />
+              </View>
+            </LinearGradient>
             <Text style={styles.heroTitle}>BONAMAS LOGIN</Text>
           </View>
           <Surface style={styles.card} mode="flat" accessibilityLabel="Formulaire de connexion">
@@ -276,6 +284,27 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     top: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoCircle: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: {width: 0, height: 9},
+    marginTop: -196,
+    elevation: 40,
+  },
+  logoImage: {
+    width: 90,
+    height: 90,
+    resizeMode: 'contain',
   },
   heroTitle: {
     position: 'absolute',

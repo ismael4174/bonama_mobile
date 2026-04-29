@@ -44,13 +44,15 @@ const ElevesAttendus = () => {
       let params = [anneescolairesID, etablissementsID];
 
       if (searchText) {
-        query += ` AND (e.nomeleve LIKE ? OR e.matriculeeleve LIKE ? OR e.prenomseleve LIKE ?)`;
-        params = [
-          ...params,
-          `%${searchText}%`,
-          `%${searchText}%`,
-          `%${searchText}%`,
-        ];
+        query += ` AND (
+    UPPER(e.nomeleve) LIKE ?
+    OR UPPER(e.prenomseleve) LIKE ?
+    OR UPPER(e.matriculeeleve) LIKE ?
+    OR UPPER(COALESCE(e.nomeleve,'') || ' ' || COALESCE(e.prenomseleve,'')) LIKE ?
+  )`;
+
+        const like = `%${searchText.toUpperCase()}%`;
+        params.push(like, like, like, like);
       }
 
       console.log('Paramètres SQL:', params);
@@ -110,7 +112,9 @@ const ElevesAttendus = () => {
             description={() => (
               <View>
                 <Text style={styles.text}>Classe: {item.classe}</Text>
-                <Text style={styles.text}>Souscrit: {item.souscrit ? 'Oui' : 'Non'}</Text>
+                <Text style={styles.text}>
+                  Souscrit: {item.souscrit ? 'Oui' : 'Non'}
+                </Text>
               </View>
             )}
             left={props => <List.Icon {...props} icon="account" />}
@@ -171,3 +175,4 @@ const styles = StyleSheet.create({
 });
 
 export default ElevesAttendus;
+

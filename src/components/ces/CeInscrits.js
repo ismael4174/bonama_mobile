@@ -158,27 +158,8 @@ const CeInscrits = () => {
   }, [fetchCommandes]);
 
   const handleSearch = useCallback(text => {
-    setSearchText(text);
-    const query =
-      text.trim() !== ''
-        ? `SELECT commandesues.* FROM commandesues JOIN ues ON ues.id = commandesues.ues_id JOIN anneescolaires ON anneescolaires.id = commandesues.anneescolaires_id WHERE LOWER(ues.denominationue) LIKE LOWER(?) OR LOWER(anneescolaires.libelleanneescolaire) LIKE LOWER(?)`
-        : `SELECT * FROM commandesues`;
-    const params = text.trim() !== '' ? [`%${text}%`, `%${text}%`] : [];
-
-    db.transaction(tx => {
-      tx.executeSql(
-        query,
-        params,
-        (_, {rows}) => {
-          setCommandes(rows.raw());
-        },
-        (_, error) => {
-          console.error('Erreur SQL : ', error);
-          return false;
-        },
-      );
-    });
-  }, []);
+  setSearchText(text);
+}, []);
 
   const handleSave = useCallback(() => {
     if (!uesId || details.length === 0) {
@@ -422,6 +403,17 @@ const CeInscrits = () => {
     }));
   }, [commandes, ueselect, anneescolaire]);
 
+  const filteredCommandes = useMemo(() => {
+  const list = memoizedCommandes;
+  const q = (searchText || '').trim().toLowerCase();
+  if (!q) return list;
+  return list.filter(
+    c =>
+      (c.ues_name || '').toLowerCase().includes(q) ||
+      (c.anneescolaire_name || '').toLowerCase().includes(q),
+  );
+}, [memoizedCommandes, searchText]);
+
   return (
     <View style={styles.container}>
       {/* 🟢 Bande de notification du total des commandes */}
@@ -435,23 +427,21 @@ const CeInscrits = () => {
       <PaperTextInput
         mode="outlined"
         style={styles.searchInput}
-        placeholder="Recherche rapide"
+        placeholder="Rechercher un CE"
         value={searchText}
-        onChangeText={text => {
-          setSearchText(text);
-        }}
+        onChangeText={handleSearch}
         left={<PaperTextInput.Icon icon="magnify" />}
       />
 
       <FlatList
-        data={memoizedCommandes}
+        data={filteredCommandes}
         keyExtractor={item => item.id.toString()}
         contentContainerStyle={styles.listContent}
         ItemSeparatorComponent={Divider}
         ListEmptyComponent={<EmptyState title="Aucune commande" subtitle="Aucune souscription CE trouvée" />}
         renderItem={({item}) => (
           <List.Item
-            title={`CE: ${item.ues_name}`}
+            title={`  ${item.ues_name}`}
             titleNumberOfLines={3}
             titleEllipsizeMode="tail"
             description={() => (

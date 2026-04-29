@@ -599,6 +599,34 @@ const createTables = () => {
         END;
         `);
       tx.executeSql(`
+        CREATE TRIGGER IF NOT EXISTS apresInsertionEtablissement
+        AFTER INSERT ON etablissements
+        BEGIN
+          INSERT INTO etablissementannees (anneescolaires_id, etablissements_id)
+          SELECT anneescolaires_id, NEW.id
+          FROM parametrages
+          WHERE id = 1;
+        END;
+        `);
+      tx.executeSql(`
+        CREATE TRIGGER IF NOT EXISTS apresinsertiondelapenalite
+        AFTER INSERT ON elevesinscrits
+        BEGIN
+          UPDATE eleves
+          SET penalite = NEW.penalite
+          WHERE id = NEW.eleves_id;
+        END;
+        `);
+      tx.executeSql(`
+        CREATE TRIGGER IF NOT EXISTS apresmodificationdelapenalite
+        AFTER UPDATE ON elevesinscrits
+        BEGIN
+          UPDATE eleves
+          SET penalite = NEW.penalite
+          WHERE id = OLD.eleves_id;
+        END;
+        `);
+      tx.executeSql(`
         CREATE TABLE IF NOT EXISTS etablissementmanuels (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           manuels_id INTEGER NOT NULL,
@@ -1104,63 +1132,6 @@ const createTables = () => {
         }
       });
       ////////////////////////////////
-      tx.executeSql(`
-        CREATE TRIGGER apresinsertionmanuelues
-        AFTER INSERT ON manuelsues
-        FOR EACH ROW
-        BEGIN
-          UPDATE stockmanuels
-          SET statutmanules_id = 2
-          WHERE id = NEW.exemplairemanuels_id;
-        END;
-        `);
-      tx.executeSql(`
-        CREATE TRIGGER miseajourapresmodifue
-        AFTER UPDATE ON manuelsues
-        FOR EACH ROW
-        BEGIN
-          -- Ajoutez ici les actions à effectuer après la mise à jour
-        END;
-        `);
-      tx.executeSql(`
-        CREATE TRIGGER miseajourueapressuppression
-        BEFORE DELETE ON manuelsues
-        FOR EACH ROW
-        BEGIN
-          UPDATE stockmanuels
-          SET statutmanules_id = 1
-          WHERE id = OLD.exemplairemanuels_id;
-        END;
-        `);
-      tx.executeSql(`
-        CREATE TRIGGER "miseajourapressuppression" 
-        BEFORE DELETE ON "manuelseleves" 
-        FOR EACH ROW
-        BEGIN
-          IF OLD."exemplairemanuelseleve_id" IS NOT NULL THEN
-            UPDATE "stockmanuels" SET "statutmanules_id" = 1 WHERE "id" = OLD."exemplairemanuelseleve_id";
-          END IF;
-        END;
-        `);
-      tx.executeSql(`
-        CREATE TRIGGER "miseajourpenaliteapresmodif" 
-        AFTER UPDATE ON "manuelseleves"
-        FOR EACH ROW
-        BEGIN
-          -- Logique à ajouter ici selon vos besoins
-        END;
-        `);
-      tx.executeSql(`
-        CREATE TRIGGER IF NOT EXISTS "apresinsertionmanuelseleve"
-        AFTER INSERT ON "manuelseleves"
-        FOR EACH ROW
-        BEGIN
-          IF NEW.exemplairemanuelseleve_id IS NOT NULL THEN
-            UPDATE stockmanuels SET statutmanules_id = 2 WHERE id = NEW.exemplairemanuelseleve_id;
-          END IF;
-        END;
-        `);
-
       tx.executeSql(`
         DROP TABLE IF EXISTS cemanuels;
         `);

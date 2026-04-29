@@ -24,6 +24,8 @@ const CeInscrits1 = () => {
   const [ues, setUes] = useState([]);
   const [searchText, setSearchText] = useState('');
   const [details, setDetails] = useState([]);
+  const [totalManuelsInscrits, setTotalManuelsInscrits] = useState(0);
+  const [totalStockManuelsDrena, setTotalStockManuelsDrena] = useState(0);
   const anneescolairesID = useAnneescolairesID();
   const drenasID = useDrenaId();
 
@@ -40,7 +42,7 @@ const CeInscrits1 = () => {
   const fetchCommandes = useCallback(() => {
     setError('');
     setLoading(true);
-    if (!drenasID || !anneescolairesID) return; 
+    if (!drenasID || !anneescolairesID) return;
     db.transaction(tx => {
       tx.executeSql(
         `SELECT commandesues.*, details.* 
@@ -71,6 +73,38 @@ const CeInscrits1 = () => {
           );
           setError('Impossible de charger les souscriptions CE.');
           setLoading(false);
+        },
+      );
+
+      // Total de manuels inscrits (somme des quantités des détails pour la DRENA + année)
+      tx.executeSql(
+        `SELECT SUM(details.nombremanuel) AS totalInscrits
+         FROM commandesues 
+         INNER JOIN detailscommandeues AS details ON commandesues.id = details.commandesues_id 
+         INNER JOIN ues ON ues.id = commandesues.ues_id 
+         INNER JOIN etablissements ON etablissements.id = ues.etablissements_id 
+         WHERE etablissements.drenas_id=? AND commandesues.anneescolaires_id=?;`,
+        [drenasID, anneescolairesID],
+        (_, res) => {
+          const total = res.rows.length > 0 && res.rows.item(0).totalInscrits
+            ? res.rows.item(0).totalInscrits
+            : 0;
+          setTotalManuelsInscrits(total);
+        },
+      );
+
+      // Total de manuels disponibles dans la DRENA (stockmanuels statut disponible)
+      tx.executeSql(
+        `SELECT COUNT(*) AS totalStock
+         FROM stockmanuels sm
+         JOIN etablissements et ON et.id = sm.etablissements_id
+         WHERE et.drenas_id = ? AND sm.statutmanules_id = 1;`,
+        [drenasID],
+        (_, res) => {
+          const total = res.rows.length > 0 && res.rows.item(0).totalStock
+            ? res.rows.item(0).totalStock
+            : 0;
+          setTotalStockManuelsDrena(total);
         },
       );
     });
@@ -197,6 +231,11 @@ const CeInscrits1 = () => {
     [manuels],
   );
 
+  const tauxInscription = useMemo(() => {
+    if (!totalStockManuelsDrena) return 0;
+    return (totalManuelsInscrits / totalStockManuelsDrena) * 100;
+  }, [totalManuelsInscrits, totalStockManuelsDrena]);
+
   const memoizedCommandes = useMemo(() => {
     return commandes.map(c => ({
       ...c,
@@ -236,6 +275,9 @@ const CeInscrits1 = () => {
               {memoizedCommandes.length} CE{memoizedCommandes.length > 1 ? 's' : ''}{' '}
               trouv{memoizedCommandes.length > 1 ? 'és' : 'é'}
             </Text>
+            <Text style={styles.totalText}>
+              Taux de manuels distribués: {tauxInscription.toFixed(1)}%
+            </Text>
           </View>
 
           <PaperTextInput
@@ -260,13 +302,13 @@ const CeInscrits1 = () => {
             ListEmptyComponent={<EmptyState title="Aucune commande" subtitle="Aucune souscription CE trouvée" />}
             renderItem={({item}) => (
               <List.Item
-                title={`CE: ${item.ues_name}`}
+                title={`  ${item.ues_name}`}
                 titleNumberOfLines={3}
                 titleEllipsizeMode="tail"
                 description={() => (
                   <View>
-                    <Text style={styles.desc}>Année scolaire: {item.anneescolaire_name}</Text>
-                    <Text style={styles.desc}>Détails des manuels:</Text>
+                    {/* <Text style={styles.desc}>Année scolaire: {item.anneescolaire_name}</Text> */}
+                    {/* <Text style={styles.desc}>Détails des manuels:</Text> */}
                     <FlatList
                       data={item.details}
                       keyExtractor={d => d.id.toString()}

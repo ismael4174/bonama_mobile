@@ -1,3 +1,4 @@
 <resources>
-    <string name="app_name">Bonamas</string>
+    <!-- <string name="app_name">Bonamas mobile</string> -->
+    <string name="app_name">Bonamas test</string>
 </resources>

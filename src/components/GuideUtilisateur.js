@@ -1,39 +1,85 @@
-import React from 'react';
-import {View, Text, Button, StyleSheet, Alert, Platform} from 'react-native';
+import React, {useState} from 'react';
+import {
+  View,
+  Text,
+  Button,
+  StyleSheet,
+  Alert,
+  Platform,
+  ActivityIndicator,
+} from 'react-native';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
 
 export default function GuideUtilisateur({navigation}) {
+  const [isDownloading, setIsDownloading] = useState(false);
+
   const downloadManual = async () => {
     try {
-      const downloadDest = `${RNFS.DocumentDirectoryPath}/manuel.pdf`;
+      if (isDownloading) {
+        return;
+      }
 
-      // Lire le fichier à partir des assets (Android)
-      const fileContent = await RNFS.readFileAssets('manuel.pdf', 'base64');
+      setIsDownloading(true);
 
-      // Écrire le fichier dans le répertoire de documents
-      await RNFS.writeFile(downloadDest, fileContent, 'base64');
+      const fileUrl = 'https://bonamas.mena-ci.com/uploads/manuel_mobile.pdf';
 
-      Share.open({
-        url: 'file://' + downloadDest,
-        type: 'application/pdf',
-      }).catch(err => {
-        err && console.log(err);
-      });
+      // Utiliser le dossier interne de l'application, accessible sans permissions
+      const basePath = RNFS.DocumentDirectoryPath;
+
+      // S'assurer que le dossier existe (en pratique DocumentDirectoryPath existe déjà)
+      const dirExists = await RNFS.exists(basePath);
+      if (!dirExists) {
+        await RNFS.mkdir(basePath);
+      }
+
+      const downloadDest = `${basePath}/manuel_mobile.pdf`;
+
+      const options = {
+        fromUrl: fileUrl,
+        toFile: downloadDest,
+      };
+
+      const result = await RNFS.downloadFile(options).promise;
+
+      if (result.statusCode === 200) {
+        Alert.alert(
+          'Téléchargement terminé',
+          `Le manuel a été téléchargé dans vos fichiers.\n\nChemin : ${downloadDest}`,
+        );
+      } else {
+        Alert.alert(
+          'Erreur',
+          "Le téléchargement du manuel a échoué. Veuillez réessayer.",
+        );
+      }
     } catch (error) {
       console.error('Erreur lors du téléchargement :', error);
       Alert.alert(
         'Erreur',
         'Une erreur est survenue lors du téléchargement du manuel.',
       );
+    } finally {
+      setIsDownloading(false);
     }
   };
 
   return (
     <View style={styles.container}>
       <Text>GUIDE</Text>
-      <Button title="Télécharger le manuel" onPress={downloadManual} />
-      <Button title="Retour" onPress={() => navigation.goBack()} />
+      <Text></Text>
+      <View style={{marginVertical: 8}}>
+        <Button
+          title={isDownloading ? 'Téléchargement...' : 'Télécharger le manuel'}
+          onPress={downloadManual}
+          disabled={isDownloading}
+        />
+      </View>
+      {isDownloading && (
+        <ActivityIndicator size="small" color="#007AFF" />
+      )}
+      <Text></Text>
+      <Button title="Précédent" onPress={() => navigation.goBack()} />
     </View>
   );
 }

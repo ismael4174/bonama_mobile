@@ -36,6 +36,9 @@ const ManuelRetrouve1 = () => {
   const [etatmanuels, setEtatmanuels] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [selectedManuelId, setSelectedManuelId] = useState(null);
+  const [assignationsEleves, setAssignationsEleves] = useState([]);
+  const [assignationsUes, setAssignationsUes] = useState([]);
   //const anneescolairesID = parseInt(UseAnneescolairesID(), 10);
   const drenasID = parseInt(UseDrenaId(), 10);
   ///////////////////////////////////////////
@@ -161,7 +164,7 @@ const ManuelRetrouve1 = () => {
     db.transaction(
       tx => {
         tx.executeSql(
-          'SELECT * FROM stockmanuels JOIN etablissements on etablissements.id = stockmanuels.etablissements_id WHERE etablissements.drenas_id=?',
+          'SELECT stockmanuels.*, etablissements.nometablissement AS nometablissement FROM stockmanuels JOIN etablissements ON etablissements.id = stockmanuels.etablissements_id WHERE etablissements.drenas_id = ?',
           [drenasID],
           (_, {rows}) => {
             setData(rows.raw());
@@ -172,6 +175,34 @@ const ManuelRetrouve1 = () => {
             setLoading(false);
             return false;
           },
+        );
+
+        tx.executeSql(
+          `SELECT
+             sto.id AS stock_id,
+             ei.id AS elevesinscrits_id,
+             e.matriculeeleve,
+             e.nomeleve,
+             e.prenomseleve
+           FROM manuelseleves me
+           JOIN stockmanuels sto ON sto.id = me.exemplairemanuelseleve_id
+           JOIN elevesinscrits ei ON ei.id = me.elevesinscrits_id
+           JOIN eleves e ON e.id = ei.eleves_id;`,
+          [],
+          (_, {rows}) => setAssignationsEleves(rows.raw()),
+        );
+
+        tx.executeSql(
+          `SELECT
+             sto.id AS stock_id,
+             c.id AS commandesues_id,
+             u.denominationue
+           FROM manuelsues mu
+           JOIN stockmanuels sto ON sto.id = mu.exemplairemanuels_id
+           JOIN commandesues c ON c.id = mu.commandesues_id
+           JOIN ues u ON u.id = c.ues_id;`,
+          [],
+          (_, {rows}) => setAssignationsUes(rows.raw()),
         );
       },
       err => {
@@ -347,6 +378,15 @@ const ManuelRetrouve1 = () => {
         <ErrorState subtitle={error} onAction={fetchData} />
       ) : (
         <>
+      <CustomPicker
+        label="Matière"
+        items={manuels.map(m => ({label: m.titre, value: m.id}))}
+        selectedId={selectedManuelId}
+        onValueChange={value => setSelectedManuelId(value)}
+        displayKey="label"
+        valueKey="value"
+      />
+
       <PaperTextInput
         mode="outlined"
         placeholder="Rechercher..."
@@ -359,10 +399,37 @@ const ManuelRetrouve1 = () => {
       />
 
       <FlatList
-        data={data.filter(item =>
-          item.referenceexemplaire.toLowerCase().includes(search.toLowerCase()),
-        )}
+        data={data.filter(item => {
+          const manuelMatch = selectedManuelId
+            ? Number(item.manuels_id) === Number(selectedManuelId)
+            : true;
+
+          const q = (search || '').toLowerCase();
+          if (!q) {
+            return manuelMatch;
+          }
+
+          const ref = (item.referenceexemplaire || '').toLowerCase();
+          const statutLabel = (
+            statuts.find(s => s.id === item.statutmanules_id)?.statut || ''
+          ).toLowerCase();
+          const manuelLabel = (
+            manuels.find(m => m.id === item.manuels_id)?.titre || ''
+          ).toLowerCase();
+          const etatLabel = (
+            etatmanuels.find(e => e.id === item.etatmanuels_id)?.etatmanuel || ''
+          ).toLowerCase();
+
+          const searchMatch =
+            ref.includes(q) ||
+            statutLabel.includes(q) ||
+            manuelLabel.includes(q) ||
+            etatLabel.includes(q);
+
+          return manuelMatch && searchMatch;
+        })}
         keyExtractor={item => `${item.id}-${item.referenceexemplaire}`}
+        contentContainerStyle={{paddingBottom: 24}}
         ListEmptyComponent={<EmptyState title="Aucun manuel retrouvé" subtitle="Modifiez la recherche pour voir des résultats" />}
         renderItem={({item}) => {
           const findLabel = (list, id, key) =>
@@ -380,26 +447,84 @@ const ManuelRetrouve1 = () => {
             'etatmanuel',
           );
 
+          const affectationsEleves = assignationsEleves.filter(
+            a => a.stock_id === item.id,
+          );
+          const affectationsUes = assignationsUes.filter(
+            a => a.stock_id === item.id,
+          );
+
+          let affectationLabel = '';
+          if (affectationsEleves.length > 0) {
+            const a = affectationsEleves[0];
+            affectationLabel = `${a.matriculeeleve} - ${a.nomeleve} ${a.prenomseleve}`;
+          } else if (affectationsUes.length > 0) {
+            const u = affectationsUes[0];
+            affectationLabel = u.denominationue;
+          }
+
           return (
             <View
               style={styles.card}
               accessible
               accessibilityLabel={`Manuel ${libelleManuel}, référence ${item.referenceexemplaire}, statut ${libelleStatut}, état ${libelleEtat}`}
-            >
+              >
               <Text style={styles.title}>Manuel: {libelleManuel}</Text>
               <Text style={styles.title}>Ref: {item.referenceexemplaire}</Text>
-              <Text style={styles.title}>Statut: {libelleStatut}</Text>
+              <Text
+                style={[
+                  styles.title,
+                  {
+                    color:
+                      Number(item.statutmanules_id) === 1 ? '#2e7d32' : '#d32f2f',
+                  },
+                ]}
+              >
+                Statut: {libelleStatut}
+              </Text>
               <Text style={styles.title}>État: {libelleEtat}</Text>
               <View style={styles.actions}>
                 <TouchableOpacity
                   onPress={() => {
-                    setCurrentItem(item);
+                    // Charger l'élément courant et ses affectations détaillées
+                    setCurrentItem({
+                      ...item,
+                      manuelseleves: [],
+                      manuelsues: [],
+                    });
+
+                    db.transaction(tx => {
+                      tx.executeSql(
+                        'SELECT * FROM manuelseleves WHERE exemplairemanuelseleve_id = ?;',
+                        [item.id],
+                        (_, res1) => {
+                          const elevesRows = res1.rows.raw();
+                          setCurrentItem(prev => ({
+                            ...prev,
+                            manuelseleves: elevesRows,
+                          }));
+                        },
+                      );
+
+                      tx.executeSql(
+                        'SELECT * FROM manuelsues WHERE exemplairemanuels_id = ?;',
+                        [item.id],
+                        (_, res2) => {
+                          const uesRows = res2.rows.raw();
+                          setCurrentItem(prev => ({
+                            ...prev,
+                            manuelsues: uesRows,
+                          }));
+                        },
+                      );
+                    });
+
                     setModalVisible(true);
                   }}
                   accessibilityRole="button"
-                  accessibilityLabel={`Modifier le manuel ${libelleManuel}, référence ${item.referenceexemplaire}`}
+                  accessibilityLabel={`Voir les détails du manuel ${libelleManuel}, référence ${item.referenceexemplaire}`}
                   hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-                  <Text style={{fontSize: 20}}>✏️</Text>
+                  <Icon name="visibility" size={22} color="#007AFF" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -457,7 +582,7 @@ const ManuelRetrouve1 = () => {
           />
 
           {/* Manuels Élèves */}
-          {currentItem?.manuelseleves?.length > 0 && (
+          {/* {currentItem?.manuelseleves?.length > 0 && (
             <View style={styles.section}>
               <Text>Manuels Élèves:</Text>
               {currentItem.manuelseleves.map((eleve, i) => (
@@ -484,10 +609,10 @@ const ManuelRetrouve1 = () => {
                 </View>
               ))}
             </View>
-          )}
+          )} */}
 
           {/* Manuels UES */}
-          {currentItem?.manuelsues?.length > 0 && (
+          {/* {currentItem?.manuelsues?.length > 0 && (
             <View style={styles.section}>
               <Text>Manuels UES:</Text>
               {currentItem.manuelsues.map((ues, i) => (
@@ -515,9 +640,43 @@ const ManuelRetrouve1 = () => {
                 </View>
               ))}
             </View>
+          )} */}
+
+          {currentItem?.id && (
+            <View style={styles.section}>
+              <Text style={{fontWeight: 'bold', marginBottom: 4}}>
+                Informations d'attribution
+              </Text>
+              {assignationsEleves
+                .filter(a => a.stock_id === currentItem.id)
+                .map((a, idx) => (
+                  <Text key={`eleve-${idx}`} style={styles.input}>
+                    Élève: {a.matriculeeleve} - {a.nomeleve} {a.prenomseleve}
+                    {currentItem.nometablissement
+                      ? ` - ${currentItem.nometablissement}`
+                      : ''}
+                  </Text>
+                ))}
+              {assignationsUes
+                .filter(a => a.stock_id === currentItem.id)
+                .map((u, idx) => (
+                  <Text key={`ce-${idx}`} style={styles.input}>
+                    {u.denominationue}
+                    {currentItem.nometablissement
+                      ? ` - ${currentItem.nometablissement}`
+                      : ''}
+                  </Text>
+                ))}
+              {assignationsEleves.filter(a => a.stock_id === currentItem.id)
+                .length === 0 &&
+              assignationsUes.filter(a => a.stock_id === currentItem.id).length ===
+                0 ? (
+                <Text style={styles.input}>Aucune attribution trouvée.</Text>
+              ) : null}
+            </View>
           )}
 
-          <PaperButton onPress={() => setModalVisible(false)}>Annuler</PaperButton>
+          <PaperButton onPress={() => setModalVisible(false)}>Retour</PaperButton>
         </View>
       </Modal>
       </>
@@ -527,6 +686,7 @@ const ManuelRetrouve1 = () => {
 };
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     padding: 10,
   },
   searchInput: {
@@ -559,15 +719,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     padding: 20,
   },
-  input: {
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
-    marginBottom: 10,
-    paddingHorizontal: 8,
-    borderRadius: 5,
-    color: 'black',
-  },
+  // input: {
+  //   height: 40,
+  //   borderColor: 'gray',
+  //   borderWidth: 1,
+  //   marginBottom: 10,
+  //   paddingHorizontal: 8,
+  //   borderRadius: 5,
+  //   color: 'black',
+  // },
   section: {
     marginTop: 20,
   },

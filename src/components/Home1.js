@@ -11,6 +11,7 @@ export default function Home1({navigation}) {
   const [annees, setAnnees] = useState([]);
   const [cesouscrit, setCesouscrit] = useState(0);
   const [elevesouscrit, setElevesouscrit] = useState(0);
+  const [elevesAttendus, setElevesAttendus] = useState(0);
   const [manueletab6, setManueletab6] = useState(0);
   const [manueletab5, setManueletab5] = useState(0);
   const [manueletab, setManueletab] = useState(0);
@@ -20,6 +21,8 @@ export default function Home1({navigation}) {
   const [manuelretoureleve6, setManuelretoureleve6] = useState(0);
   const [manuelretoureleve5, setManuelretoureleve5] = useState(0);
   const [manuelretoureleve, setManuelretoureleve] = useState(0);
+  const [stockDispo, setStockDispo] = useState(0);
+  const [totalPenalites, setTotalPenalites] = useState(0);
   const [etablissements, setEtablissements] = useState([]);
   const [drenas, setDrenas] = useState([]);
 
@@ -28,6 +31,13 @@ export default function Home1({navigation}) {
   const {refreshKey} = useRefresh(); // 👈 écoute du refresh global
 
   const safeDivide = (num, denom) => (denom === 0 ? 0 : num / denom);
+
+  const formatTaux = (num, denom) => {
+    if (denom === 0 || denom == null || num == null) {
+      return 'Na';
+    }
+    return (safeDivide(num, denom) * 100).toFixed(1) + ' %';
+  };
 
   const anneescolaire = useCallback(
     id => {
@@ -52,6 +62,12 @@ export default function Home1({navigation}) {
         {
           sql: 'SELECT id, libelleanneescolaire FROM anneescolaires;',
           setter: setAnnees,
+        },
+        // Élèves attendus (tous les inscrits de la DRENA pour l'année)
+        {
+          sql: 'SELECT COUNT(elevesinscrits.id) AS NBRE FROM elevesinscrits JOIN etablissements ON etablissements.id = elevesinscrits.etablissements_id WHERE elevesinscrits.anneescolaires_id = ? AND etablissements.drenas_id = ?;',
+          params: [anneescolairesID, drenasID],
+          setter: setElevesAttendus,
         },
         {
           sql: 'SELECT COUNT(elevesinscrits.id) AS NBRE FROM elevesinscrits JOIN etablissements ON etablissements.id = elevesinscrits.etablissements_id WHERE elevesinscrits.presouscrit=1 AND elevesinscrits.anneescolaires_id = ? AND etablissements.drenas_id = ?;',
@@ -110,6 +126,18 @@ export default function Home1({navigation}) {
           params: [drenasID, anneescolairesID],
           setter: setManuelretoureleve,
         },
+        // Stock de manuels disponibles (statut = 1)
+        {
+          sql: 'SELECT COUNT(stockmanuels.id) AS NBRE FROM stockmanuels JOIN etablissements ON etablissements.id = stockmanuels.etablissements_id WHERE stockmanuels.statutmanules_id = 1 AND etablissements.drenas_id = ?;',
+          params: [drenasID],
+          setter: setStockDispo,
+        },
+        // Total des pénalités à recouvrer
+        {
+          sql: 'SELECT COALESCE(SUM(manuelseleves.montantpenalite), 0) AS NBRE FROM manuelseleves JOIN elevesinscrits ON elevesinscrits.id = manuelseleves.elevesinscrits_id JOIN etablissements ON etablissements.id = elevesinscrits.etablissements_id WHERE etablissements.drenas_id = ? AND elevesinscrits.anneescolaires_id = ?;',
+          params: [drenasID, anneescolairesID],
+          setter: setTotalPenalites,
+        },
         {
           sql: 'SELECT id, nometablissement FROM etablissements WHERE etablissements.drenas_id=?;',
           params: [drenasID],
@@ -147,6 +175,12 @@ export default function Home1({navigation}) {
     loadData();
   }, [refreshKey, loadData]);
 
+  const tauxInscription = elevesAttendus
+    ? (safeDivide(elevesouscrit, elevesAttendus) * 100).toFixed(1) + ' %'
+    : 'Na';
+  const tauxRemise = formatTaux(manuelremiseleve, manueletab);
+  const tauxRetour = formatTaux(manuelretoureleve, manuelremiseleve);
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Surface style={styles.card}>
@@ -178,6 +212,15 @@ export default function Home1({navigation}) {
       </Surface>
       <Surface style={styles.card}>
         <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 6}}>
+          <Avatar.Icon size={32} icon="account" />
+          <Text style={[styles.titre, {marginLeft: 8, color: theme.colors.primary}]}>ÉLÈVES</Text>
+        </View>
+        <Text style={styles.text}>Nombre attendus : {elevesAttendus}</Text>
+        <Text style={styles.text}>Nombre inscrits : {elevesouscrit}</Text>
+        <Text style={styles.text}>Taux d'inscription : {tauxInscription}</Text>
+      </Surface>
+      <Surface style={styles.card}>
+        <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 6}}>
           <Avatar.Icon size={32} icon="book" />
           <Text style={[styles.titre, {marginLeft: 8, color: theme.colors.primary}]}>MANUELS kit(s)</Text>
         </View>
@@ -189,6 +232,22 @@ export default function Home1({navigation}) {
             Voir liste des manuels
           </PaperButton>
         )}
+      </Surface>
+      <Surface style={styles.card}>
+        <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 6}}>
+          <Avatar.Icon size={32} icon="chart-line" />
+          <Text style={[styles.titre, {marginLeft: 8, color: theme.colors.primary}]}>TAUX REMISE / RETOUR</Text>
+        </View>
+        <Text style={styles.text}>Taux de remise : {tauxRemise}</Text>
+        <Text style={styles.text}>Taux de retour : {tauxRetour}</Text>
+      </Surface>
+      <Surface style={styles.card}>
+        <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 6}}>
+          <Avatar.Icon size={32} icon="cash" />
+          <Text style={[styles.titre, {marginLeft: 8, color: theme.colors.primary}]}>PÉNALITÉS & STOCK</Text>
+        </View>
+        <Text style={styles.text}>Total pénalités à recouvrer : {totalPenalites} FCFA</Text>
+        <Text style={styles.text}>Stock de manuels disponibles : {stockDispo}</Text>
       </Surface>
     </ScrollView>
   );

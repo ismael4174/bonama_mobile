@@ -12,6 +12,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import CustomPicker from '../CustomPicker';
 import RemiseCeDetails from './RemiseCeDetails'; // Importez le composant RemiseCeDetails
 import useEtablissementId from '../../parametres/etablissement.js';
+import {useFocusEffect} from '@react-navigation/native';
 
 /*const dbName = 'bd_bonamas_local.db';
 const db = SQLite.openDatabase({name: dbName, location: 'default'});
@@ -226,193 +227,15 @@ const CeInscrits = ({navigation}) => {
     });
   }, [fetchCommandes, generateReceiptPDF]);
 
+  useFocusEffect(
+    useCallback(() => {
+      fetchCommandes();
+    }, [fetchCommandes]),
+  );
+
   const handleSearch = useCallback(text => {
     setSearchText(text);
-    const query =
-      text.trim() !== ''
-        ? `SELECT commandesues.* FROM commandesues JOIN ues ON ues.id = commandesues.ues_id JOIN anneescolaires ON anneescolaires.id = commandesues.anneescolaires_id WHERE LOWER(ues.denominationue) LIKE LOWER(?) OR LOWER(anneescolaires.libelleanneescolaire) LIKE LOWER(?)`
-        : `SELECT * FROM commandesues`;
-    const params = text.trim() !== '' ? [`%${text}%`, `%${text}%`] : [];
-
-    db.transaction(tx => {
-      tx.executeSql(
-        query,
-        params,
-        (_, {rows}) => {
-          setCommandes(rows.raw());
-        },
-        (_, error) => {
-          console.error('Erreur SQL : ', error);
-          return false;
-        },
-      );
-    });
   }, []);
-
-  /* const handleSave = useCallback(() => {
-    if (!uesId || !anneeScolaireId || nombretotalmanuel === '') {
-      alert('Veuillez remplir tous les champs');
-      return;
-    }
-
-    db.transaction(
-      tx => {
-        if (selectedCommande) {
-          tx.executeSql(
-            'UPDATE commandesues SET ues_id = ?, anneescolaires_id = ?, nombretotalmanuel = ? WHERE id = ?;',
-            [uesId, anneeScolaireId, nombretotalmanuel, selectedCommande.id],
-            () => {
-              updateDetailsCommande(tx, selectedCommande.id);
-              addSyncLog(tx, 'commandesues', selectedCommande.id, 'update', {
-                ues_id: uesId,
-                anneescolaires_id: anneeScolaireId,
-                nombretotalmanuel: nombretotalmanuel,
-              });
-            },
-          );
-        } else {
-          tx.executeSql(
-            'INSERT INTO commandesues (ues_id, anneescolaires_id, nombretotalmanuel, datesouscription, presouscrit) VALUES (?, ?, ?, ?, ?);',
-            [uesId, anneeScolaireId, nombretotalmanuel],
-            (tx, result) => {
-              const commandesuesId = result.insertId;
-              insertDetailsCommande(tx, commandesuesId);
-              addSyncLog(tx, 'commandesues', commandesuesId, 'insert', {
-                ues_id: uesId,
-                anneescolaires_id: anneeScolaireId,
-                nombretotalmanuel: nombretotalmanuel,
-              });
-            },
-          );
-        }
-      },
-      error => console.log(error),
-    );
-    setModalVisible(false);
-    resetForm();
-  }, [uesId, anneeScolaireId, nombretotalmanuel, selectedCommande]);
-
-  const updateDetailsCommande = useCallback(
-    (tx, commandesuesId) => {
-      details.forEach(detail => {
-        tx.executeSql(
-          'INSERT INTO detailscommandeues (commandesues_id, manuels_id, nombremanuel) VALUES (?, ?, ?);',
-          [commandesuesId, detail.manuelId, detail.nombreManuel],
-        );
-        addSyncLog(tx, 'detailscommandeues', null, 'insert', {
-          commandesues_id: commandesuesId,
-          manuels_id: detail.manuelId,
-          nombremanuel: detail.nombreManuel,
-        });
-      });
-    },
-    [details],
-  );*/
-
-  /*const insertDetailsCommande = useCallback(
-    (tx, commandesuesId) => {
-      details.forEach(detail => {
-        tx.executeSql(
-          'INSERT INTO detailscommandeues (commandesues_id, manuels_id, nombremanuel) VALUES (?, ?, ?);',
-          [commandesuesId, detail.manuelId, detail.nombreManuel],
-        );
-        addSyncLog(tx, 'detailscommandeues', null, 'insert', {
-          commandesues_id: commandesuesId,
-          manuels_id: detail.manuelId,
-          nombremanuel: detail.nombreManuel,
-        });
-      });
-    },
-    [details],
-  );*/
-  /*
-  const addSyncLog = useCallback((tx, table, recordId, action, data) => {
-    const syncData = JSON.stringify(data);
-    tx.executeSql(
-      'INSERT INTO sync_log (table_name, record_id, action, data, last_modified) VALUES (?, ?, ?, ?, ?);',
-      [table, recordId, action, syncData, new Date().toISOString()],
-    );
-  }, []);
-*/
-  /*const handleEdit = useCallback(item => {
-    setSelectedCommande(item);
-    setUesId(item.ues_id);
-    setAnneeScolaireId(item.anneescolaires_id);
-    setNombretotalmanuel(
-      item.nombretotalmanuel ? item.nombretotalmanuel.toString() : '',
-    );
-    setDetails(item.details);
-    setModalVisible(true);
-  }, []);
-
-  const handleDelete = useCallback(
-    id => {
-      db.transaction(tx => {
-        tx.executeSql(
-          'DELETE FROM detailscommandeues WHERE commandesues_id =?;',
-          [id],
-          () => {
-            addSyncLog(tx, 'detailscommandeues', id, 'delete', {
-              commandesues_id: id,
-            });
-            tx.executeSql(
-              'DELETE FROM commandesues WHERE id = ?;',
-              [id],
-              () => {
-                addSyncLog(tx, 'commandesues', id, 'delete', {id});
-                fetchCommandes();
-              },
-              error =>
-                console.log(
-                  'Erreur lors de la suppression de la commande:',
-                  error,
-                ),
-            );
-          },
-          error =>
-            console.log(
-              'Erreur lors de la suppression des détails de la commande:',
-              error,
-            ),
-        );
-      });
-    },
-    [fetchCommandes],
-  );
-
-  const handleAddDetail = useCallback(() => {
-    setDetails([...details, {manuels_id: '', nombremanuel: ''}]);
-  }, [details]);
-
-  const handleDetailChange = useCallback(
-    (index, field, value) => {
-      const updatedDetails = [...details];
-      updatedDetails[index][field] = value;
-      setDetails(updatedDetails);
-    },
-    [details],
-  );
-
-  const handleDeleteDetail = useCallback(
-    index => {
-      const updatedDetails = details.filter((_, i) => i !== index);
-      setDetails(updatedDetails);
-    },
-    [details],
-  );
-
-  const resetForm = useCallback(() => {
-    setSelectedCommande(null);
-    setUesId(null);
-    setAnneeScolaireId(null);
-    setNombretotalmanuel('');
-    setDetails([]); // Réinitialiser les détails
-  }, []);
-
-  const closeModal = useCallback(() => {
-    resetForm();
-    setModalVisible(false);
-  }, [resetForm]);*/
 
   const anneescolaire = useCallback(
     id => {
@@ -474,25 +297,36 @@ const CeInscrits = ({navigation}) => {
     }));
   }, [commandes, ueselect, anneescolaire]);
 
+  const filteredCommandes = useMemo(() => {
+    const list = memoizedCommandes;
+    const q = (searchText || '').trim().toLowerCase();
+    if (!q) return list;
+    return list.filter(
+      c =>
+        (c.ues_name || '').toLowerCase().includes(q) ||
+        (c.anneescolaire_name || '').toLowerCase().includes(q),
+    );
+  }, [memoizedCommandes, searchText]);
+
   return (
     <View style={styles.container}>
       <PaperTextInput
         mode="outlined"
         style={styles.searchInput}
-        placeholder="Recherche rapide"
+        placeholder="Rechercher un CE ou une année scolaire"
         value={searchText}
         onChangeText={handleSearch}
         left={<PaperTextInput.Icon icon="magnify" />}
       />
 
       <FlatList
-        data={memoizedCommandes}
+        data={filteredCommandes}
         keyExtractor={item => item.id.toString()}
         contentContainerStyle={styles.listContent}
         ItemSeparatorComponent={Divider}
         renderItem={({item}) => (
           <List.Item
-            title={`CE: ${item.ues_name}`}
+            title={`  ${item.ues_name}`}
             titleNumberOfLines={3}
             titleEllipsizeMode="tail"
             description={() => (
@@ -517,7 +351,12 @@ const CeInscrits = ({navigation}) => {
                     Éditer
                   </PaperButton>
                 ) : (
-                  <PaperButton mode="contained" disabled>
+                  <PaperButton
+                    mode="contained"
+                    disabled
+                    compact
+                    style={{paddingHorizontal: 4, paddingVertical: 0, minWidth: 10}}
+                    labelStyle={{fontSize: 10}}>
                     Déjà finalisée
                   </PaperButton>
                 )}

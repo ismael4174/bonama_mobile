@@ -14,6 +14,8 @@ const CeInscritsvalidation = () => {
   const [uesId, setUesId] = useState('');
   const [nombretotalmanuel, setNombreTotalManuel] = useState('');
   const [selectedCommande, setSelectedCommande] = useState(null);
+  const [editCommande, setEditCommande] = useState(null);
+  const [editedDetails, setEditedDetails] = useState([]); // détails modifiables (quantités)
 
   const anneeScolaireId = useAnneescolairesID();
   const etablissementId = useEtablissementId();
@@ -343,6 +345,58 @@ const CeInscritsvalidation = () => {
     });
   }, [etablissementId]);
 
+  const openEditModal = commande => {
+    setEditCommande(commande);
+    setEditedDetails(
+      (commande.details || []).map(d => ({
+        ...d,
+        nombremanuelStr: d.nombremanuel != null ? String(d.nombremanuel) : '0',
+      })),
+    );
+    setModalVisible(true);
+  };
+
+  const handleChangeDetailQuantity = (detailId, value) => {
+    const numeric = value.replace(/[^0-9]/g, '');
+    setEditedDetails(prev =>
+      prev.map(d =>
+        d.id === detailId ? {...d, nombremanuelStr: numeric} : d,
+      ),
+    );
+  };
+
+  const saveEditedCommande = () => {
+    if (!editCommande) {
+      setModalVisible(false);
+      return;
+    }
+
+    db.transaction(tx => {
+      let total = 0;
+
+      editedDetails.forEach(d => {
+        const qty = parseInt(d.nombremanuelStr || '0', 10) || 0;
+        total += qty;
+        tx.executeSql(
+          'UPDATE detailscommandeues SET nombremanuel = ? WHERE id = ?;',
+          [qty, d.id],
+        );
+      });
+
+      // Mettre à jour le nombre total sur la commande
+      tx.executeSql(
+        'UPDATE commandesues SET nombretotalmanuel = ? WHERE id = ?;',
+        [total, editCommande.id],
+        () => {
+          fetchCommandes();
+          setModalVisible(false);
+          setEditCommande(null);
+          setEditedDetails([]);
+        },
+      );
+    });
+  };
+
   const renderItem = ({item}) => (
     <List.Item
       title={item.ues_nom}
@@ -364,6 +418,12 @@ const CeInscritsvalidation = () => {
       left={props => <List.Icon {...props} icon="account-group" />}
       right={props => (
         <View style={{justifyContent: 'center'}}>
+          <PaperButton
+            mode="outlined"
+            style={{marginBottom: 4}}
+            onPress={() => openEditModal(item)}>
+            Modifier
+          </PaperButton>
           <PaperButton mode="contained" onPress={() => confirmValidation(item.id)}>
             Valider
           </PaperButton>
@@ -381,24 +441,53 @@ const CeInscritsvalidation = () => {
         renderItem={renderItem}
       />
       <Modal visible={modalVisible} animationType="slide">
-        <View style={{padding: 20}}>
-          <Text style={{fontWeight: 'bold'}}>Formulaire de modification</Text>
-          <CustomPicker
-            items={ues.map(u => ({label: u.nom, value: u.id}))}
-            onValueChange={setUesId}
-            selectedValue={uesId}
-            placeholder="Choisir UES"
-          />
-          <PaperTextInput
-            mode="outlined"
-            style={styles.input}
-            value={nombretotalmanuel}
-            onChangeText={setNombreTotalManuel}
-            placeholder="Total manuels"
-            keyboardType="numeric"
-          />
-          <PaperButton mode="contained" onPress={() => setModalVisible(false)}>
+        <View style={{padding: 20, flex: 1}}>
+          <Text style={{fontWeight: 'bold', marginBottom: 10}}>
+            Modifier les quantités de la commande
+          </Text>
+          {editCommande && (
+            <Text style={{marginBottom: 10}}>
+              CE / UE : {editCommande.ues_nom}
+            </Text>
+          )}
+
+          {editedDetails.length > 0 ? (
+            <FlatList
+              data={editedDetails}
+              keyExtractor={d => d.id.toString()}
+              renderItem={({item}) => (
+                <View style={{marginBottom: 10}}>
+                  <Text style={{marginBottom: 4}}>📘 {item.manuel_nom}</Text>
+                  <PaperTextInput
+                    mode="outlined"
+                    style={styles.input}
+                    keyboardType="numeric"
+                    value={item.nombremanuelStr}
+                    onChangeText={text =>
+                      handleChangeDetailQuantity(item.id, text)
+                    }
+                  />
+                </View>
+              )}
+            />
+          ) : (
+            <Text style={{color: '#888'}}>Aucun détail à modifier.</Text>
+          )}
+
+          <PaperButton
+            mode="contained"
+            onPress={saveEditedCommande}
+            style={{marginTop: 10}}>
             Enregistrer
+          </PaperButton>
+          <PaperButton
+            style={{marginTop: 10}}
+            onPress={() => {
+              setModalVisible(false);
+              setEditCommande(null);
+              setEditedDetails([]);
+            }}>
+            Annuler
           </PaperButton>
         </View>
       </Modal>

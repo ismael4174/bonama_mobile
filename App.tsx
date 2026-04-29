@@ -64,6 +64,7 @@ import ManuelRetrouve1 from './src/components/manuels/ManuelRetrouve1';
 import CeInscrits from './src/components/ces/CeInscrits';
 import CeInscrits1 from './src/components/ces/CeInscrits1';
 import CreationDeCe from './src/components/ces/CreationDeCe';
+import Uesannees from './src/components/ces/Uesannees';
 import ValidationCe from './src/components/ces/ValidationSouscriptionCe';
 import ValidationEleve from './src/components/eleves/ValidationSouscriptionEleve';
 import Guide from './src/components/GuideUtilisateur';
@@ -231,6 +232,13 @@ const CustomDrawerContent1 = ({navigation}) => {
         <List.Item title="Tableau de bord" left={props => <List.Icon {...props} icon="view-dashboard" />} onPress={() => navigation.navigate('Tableau de bord')} />
         <List.Item title="Documentation" left={props => <List.Icon {...props} icon="file-document" />} onPress={() => navigation.navigate('Documentation')} />
         <List.Item title="Paramètres généraux" left={props => <List.Icon {...props} icon="cog" />} onPress={() => navigation.navigate('Paramètres généraux')} />
+        {/** Transferts de manuels (désactivé) */}
+        {/**
+        <Drawer.Screen
+          name="Transferts de manuels"
+          component={TransfertStack1}
+        />
+        */}
         <List.Item title="Liste des manuels" left={props => <List.Icon {...props} icon="book" />} onPress={() => navigation.navigate('Liste des manuels')} />
         <List.Item title="Souscriptions" left={props => <List.Icon {...props} icon="account-group" />} onPress={() => navigation.navigate('Souscriptions')} />
         <List.Item title="Recap Etab" left={props => <List.Icon {...props} icon="school" />} onPress={() => navigation.navigate('Recap Etab')} />
@@ -484,13 +492,13 @@ function ParametresgenereauxScreen({navigation}) {
         onPress={() => navigation.navigate('Manuels en stock')}
       />
       <Button
-        title="Créer un CE"
-        onPress={() => navigation.navigate('Créer un CE')}
+        title="Modifier un CE"
+        onPress={() => navigation.navigate('Uesannees')}
       />
-      <Button
+      {/* <Button
         title="Actualiser les données des élèves"
         onPress={() => navigation.navigate('Actualiser les données')}
-      />
+      /> */}
     </View>
   );
 }
@@ -502,7 +510,7 @@ function RemiseScreen({navigation}) {
         title="Elèves"
         onPress={() => navigation.navigate('RemiseEleve')}
       />
-      <Button title="CEs" onPress={() => navigation.navigate('RemiseCe')} />
+      <Button title="CE" onPress={() => navigation.navigate('RemiseCe')} />
     </View>
   );
 }
@@ -514,7 +522,7 @@ function RetourScreen({navigation}) {
         title="Elèves"
         onPress={() => navigation.navigate('RetourEleve')}
       />
-      <Button title="CEs" onPress={() => navigation.navigate('RetourCe')} />
+      <Button title="CE" onPress={() => navigation.navigate('RetourCe')} />
     </View>
   );
 }
@@ -531,7 +539,7 @@ function SouscripteursScreen({navigation}) {
         onPress={() => navigation.navigate('Eleves Inscrits')}
       />
       <Button
-        title="CEs souscripteurs"
+        title="CE souscripteurs"
         onPress={() => navigation.navigate('Ce Inscrits')}
       />
     </View>
@@ -550,7 +558,7 @@ function SouscripteursScreen1({navigation}) {
         onPress={() => navigation.navigate('Eleves Inscrits')}
       />
       <Button
-        title="CEs souscripteurs"
+        title="CE souscripteurs"
         onPress={() => navigation.navigate('Ce Inscrits')}
       />
     </View>
@@ -583,7 +591,7 @@ function ValidationScreen({navigation}) {
   return (
     <View style={{flex: 1}}>
       <Button title="Elèves" onPress={() => navigation.navigate('Eleves')} />
-      <Button title="CEs" onPress={() => navigation.navigate('CEs')} />
+      <Button title="CE" onPress={() => navigation.navigate('CEs')} />
     </View>
   );
 }
@@ -594,6 +602,7 @@ function ParametresStack() {
       <Stack.Screen name=" " component={ParametresgenereauxScreen} />
       <Stack.Screen name="Manuels en stock" component={ManuelsEnStock} options={{ title: 'Manuels en stock' }}/>
       <Stack.Screen name="Créer un CE" component={CreationDeCe} options={{ title: 'Créer un CE' }}/>
+      <Stack.Screen name="Uesannees" component={Uesannees} options={{ title: 'Modifier un CE' }}/>
       <Stack.Screen
         name="Actualiser les données"
         component={ActualisationEleve}

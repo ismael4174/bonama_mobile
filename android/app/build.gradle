@@ -78,8 +78,9 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace "com.bonamas"
+    // namespace "com.bonamas"
     defaultConfig {
-        applicationId "com.bonamas"
+        applicationId "com.bonamas.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

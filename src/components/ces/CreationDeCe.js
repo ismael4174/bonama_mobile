@@ -92,9 +92,15 @@ const CreationDeCe = () => {
 
   const fetchUes = () => {
     db.transaction(tx => {
-      tx.executeSql('SELECT * FROM ues', [], (_, {rows}) => {
-        setUes(rows.raw());
-      });
+      tx.executeSql(
+        `SELECT u.id, u.denominationue, u.etablissements_id, u.matieres_id, ua.anneescolaires_id
+         FROM ues u
+         LEFT JOIN uesannees ua ON ua.ues_id = u.id`,
+        [],
+        (_, {rows}) => {
+          setUes(rows.raw());
+        },
+      );
     });
   };
 
@@ -112,6 +118,14 @@ const CreationDeCe = () => {
   };
 
   const syncData = async (localId, action) => {
+    // On ne synchronise que les mises à jour vers l'API
+    if (action !== 'update') {
+      return;
+    }
+
+    // Payload complet attendu par le backend :
+    // - les méta-infos de l'UE (inchangées côté mobile)
+    // - les infos du responsable (modifiables)
     const data = {
       denominationue: denominationue,
       etablissements_id: etablissement,
@@ -128,9 +142,8 @@ const CreationDeCe = () => {
     const isConnected = await checkConnection();
 
     if (isConnected) {
-      const url =
-        action === 'insert' ? `${API_URL}ues` : `${API_URL}ues/${localId}`;
-      const method = action === 'insert' ? axios.post : axios.put;
+      const url = `${API_URL}ues/${localId}`;
+      const method = axios.put;
 
       method(url, data, {
         headers: {'Content-Type': 'application/json'},
@@ -148,87 +161,43 @@ const CreationDeCe = () => {
     }
   };
 
-  // 🧩 FONCTION SAVEUE COMPLÈTE AVEC SYNCHRONISATION
+  // 🧩 FONCTION SAVEUE : UNIQUEMENT MISE À JOUR (PAS DE CRÉATION CÔTÉ MOBILE)
   const saveUe = async () => {
-    if (!denominationue || !etablissement || !matiere || !annee) {
-      Alert.alert('Erreur', 'Veuillez remplir tous les champs obligatoires.');
+    // Si aucune UE n'est en édition, on bloque la création côté mobile
+    if (!editingUe) {
+      Alert.alert(
+        'Information',
+        "La création d'une UE ne se fait plus depuis l'application mobile.",
+      );
       return;
     }
 
     db.transaction(tx => {
-      if (editingUe) {
-        // --- 🔄 Mise à jour d'une UE existante ---
-        tx.executeSql(
-          'UPDATE ues SET denominationue = ?, etablissements_id = ?, matieres_id = ? WHERE id = ?',
-          [denominationue, etablissement, matiere, editingUe.id],
-          async (_, result) => {
-            tx.executeSql(
-              `UPDATE uesannees 
-               SET matriculeresponsablece = ?, nomresponsablece = ?, emailresponsablece = ?, contactresponsablece = ?, anneescolaires_id = ?
-               WHERE ues_id = ?`,
-              [matricule, nom, email, contact, annee, editingUe.id],
-            );
+      // --- 🔄 Mise à jour d'une UE existante : seulement les infos du responsable ---
+      tx.executeSql(
+        `UPDATE uesannees 
+         SET matriculeresponsablece = ?, nomresponsablece = ?, emailresponsablece = ?, contactresponsablece = ?
+         WHERE ues_id = ?`,
+        [matricule, nom, email, contact, editingUe.id],
+        async () => {
+          await addSyncLog('ues', editingUe.id, 'update', {
+            responsable: {
+              matriculeresponsablece: matricule,
+              nomresponsablece: nom,
+              emailresponsablece: email,
+              contactresponsablece: contact,
+            },
+          });
 
-            await addSyncLog('ues', editingUe.id, 'update', {
-              denominationue,
-              etablissements_id: etablissement,
-              matieres_id: matiere,
-              responsable: {
-                matriculeresponsablece: matricule,
-                nomresponsablece: nom,
-                emailresponsablece: email,
-                contactresponsablece: contact,
-                anneescolaires_id: annee,
-              },
-            });
+          await syncData(editingUe.id, 'update');
 
-            await syncData(editingUe.id, 'update');
-
-            fetchUes();
-            Alert.alert('Succès', 'UE mise à jour avec succès.');
-            closeModal();
-          },
-          error =>
-            console.error('Erreur lors de la mise à jour de l’UE :', error),
-        );
-      } else {
-        // --- ➕ Insertion d'une nouvelle UE ---
-        const ueUuid = uuid.v4();
-        tx.executeSql(
-          'INSERT INTO ues (uuid, denominationue, etablissements_id, matieres_id) VALUES (?, ?, ?, ?)',
-          [ueUuid, denominationue, etablissement, matiere],
-          async (_, result) => {
-            const insertedId = result.insertId;
-
-            tx.executeSql(
-              `INSERT INTO uesannees 
-                (uuid, ues_id, matriculeresponsablece, nomresponsablece, emailresponsablece, contactresponsablece, anneescolaires_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)`,
-              [uuid.v4(), insertedId, matricule, nom, email, contact, annee],
-            );
-
-            await addSyncLog('ues', insertedId, 'insert', {
-              denominationue,
-              etablissements_id: etablissement,
-              matieres_id: matiere,
-              responsable: {
-                matriculeresponsablece: matricule,
-                nomresponsablece: nom,
-                emailresponsablece: email,
-                contactresponsablece: contact,
-                anneescolaires_id: annee,
-              },
-            });
-
-            await syncData(insertedId, 'insert');
-
-            fetchUes();
-            Alert.alert('Succès', 'UE enregistrée avec succès.');
-            closeModal();
-          },
-          error => console.error('Erreur lors de l’insertion de l’UE :', error),
-        );
-      }
+          fetchUes();
+          Alert.alert('Succès', 'UE mise à jour avec succès.');
+          closeModal();
+        },
+        error =>
+          console.error('Erreur lors de la mise à jour de l’UE :', error),
+      );
     });
   };
 
@@ -306,9 +275,9 @@ const CreationDeCe = () => {
         onChangeText={handleSearch}
       />
 
-      <PaperButton mode="contained" onPress={() => openModal()}>
+      {/* <PaperButton mode="contained" onPress={() => openModal()}>
         Ajouter une UE
-      </PaperButton>
+      </PaperButton> */}
 
       <FlatList
         data={ues}
@@ -318,9 +287,13 @@ const CreationDeCe = () => {
             e => e.id === item.etablissements_id,
           );
           const mat = matieres.find(m => m.id === item.matieres_id);
+          const anneeItem = annees.find(a => a.id === item.anneescolaires_id);
           return (
             <View style={styles.card}>
               <Text style={styles.title}>{item.denominationue}</Text>
+              <Text>
+                {anneeItem ? anneeItem.libelleanneescolaire : ''}
+              </Text>
               <Text>
                 {etab ? etab.nometablissement : 'Établissement inconnu'}
               </Text>
@@ -329,9 +302,9 @@ const CreationDeCe = () => {
                 <TouchableOpacity onPress={() => openModal(item)}>
                   <Text style={{fontSize: 20}}>✏️</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => deleteUe(item.id)}>
+                {/* <TouchableOpacity onPress={() => deleteUe(item.id)}>
                   <Text style={{fontSize: 20}}>🗑️</Text>
-                </TouchableOpacity>
+                </TouchableOpacity> */}
               </View>
             </View>
           );
@@ -348,6 +321,7 @@ const CreationDeCe = () => {
               placeholder="Nom UE"
               value={denominationue}
               onChangeText={setDenominationue}
+              editable={false}
             />
             <PaperTextInput
               mode="outlined"
@@ -388,6 +362,8 @@ const CreationDeCe = () => {
               }))}
               selectedId={annee}
               onValueChange={setAnnee}
+              placeholder="Sélectionner une année scolaire"
+              isDisabled={false}
             />
             <CustomPicker
               items={etablissements.map(etab => ({
@@ -396,6 +372,8 @@ const CreationDeCe = () => {
               }))}
               selectedId={etablissement}
               onValueChange={setEtablissement}
+              placeholder="Sélectionner un établissement"
+              isDisabled={true}
             />
             <CustomPicker
               items={matieres.map(mat => ({
@@ -404,6 +382,8 @@ const CreationDeCe = () => {
               }))}
               selectedId={matiere}
               onValueChange={setMatiere}
+              placeholder="Sélectionner une matière"
+              isDisabled={true}
             />
 
             <PaperButton mode="contained" onPress={saveUe}>

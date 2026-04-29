@@ -100,6 +100,28 @@ export const syncLocalToServer = async () => {
                   },
                 })
                 .then(response => {
+                  console.log(
+                    `🔁 Réponse serveur pour log #${log.id}:`,
+                    response.status,
+                    response.data,
+                  );
+
+                  const msg =
+                    response &&
+                    response.data &&
+                    typeof response.data.message === 'string'
+                      ? response.data.message
+                      : null;
+
+                  // Si le serveur indique explicitement "0 actions", on considère que
+                  // rien n'a été appliqué côté serveur et on NE supprime PAS le log.
+                  if (msg && msg.includes('0 actions')) {
+                    console.warn(
+                      `⚠️ Log #${log.id} non appliqué côté serveur (0 actions).`,
+                    );
+                    return {status: 'rejected', id: log.id};
+                  }
+
                   if (response.status >= 200 && response.status < 300) {
                     console.log(`✅ Log #${log.id} synchronisé.`);
                     return {status: 'fulfilled', id: log.id};
@@ -111,7 +133,14 @@ export const syncLocalToServer = async () => {
                   }
                 })
                 .catch(err => {
-                  console.error(`❌ Log #${log.id} échec : ${err.message}`);
+                  if (err.response) {
+                    console.error(
+                      `❌ Log #${log.id} échec HTTP ${err.response.status}:`,
+                      err.response.data,
+                    );
+                  } else {
+                    console.error(`❌ Log #${log.id} échec : ${err.message}`);
+                  }
                   return {status: 'rejected', id: log.id};
                 }),
             );

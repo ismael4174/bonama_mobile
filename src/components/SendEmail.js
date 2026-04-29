@@ -13,8 +13,8 @@ const SendEmail = ({navigation}) => {
   const [message, setMessage] = useState('');
 
   const sendEmail = () => {
-    const email = 'atioumou@gmail.com';
-    const subject = "Contact depuis l'application";
+    const email = 'a.niangoran@education.gouv.ci';
+    const subject = "Contactez depuis l'application";
     const body = encodeURIComponent(message);
 
     const mailtoLink = `mailto:${email}?subject=${subject}&body=${body}`;

@@ -35,6 +35,10 @@ const StockManuels = () => {
   const [etatmanuels, setEtatmanuels] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [stockParMatiere, setStockParMatiere] = useState([]);
+  const [stockParNiveau, setStockParNiveau] = useState([]);
+  const [totalStockDispo, setTotalStockDispo] = useState(0);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const etablissementsID = parseInt(useEtablissementId(), 10);
   const drenasID = parseInt(useDrenaId(), 10);
   useEffect(() => {
@@ -120,6 +124,50 @@ const StockManuels = () => {
             return false;
           },
         );
+
+        tx.executeSql(
+          `SELECT m.id AS manuels_id, m.titre AS titre, COUNT(sm.id) AS quantite
+           FROM stockmanuels sm
+           JOIN manuels m ON m.id = sm.manuels_id
+           JOIN etablissements e ON e.id = sm.etablissements_id
+           WHERE e.drenas_id = ? AND sm.statutmanules_id = 1
+           GROUP BY m.id, m.titre
+           ORDER BY m.titre`,
+          [drenasID],
+          (_, {rows}) => {
+            setStockParMatiere(rows.raw());
+          },
+        );
+
+        tx.executeSql(
+          `SELECT c.id AS classes_id, c.libelleclasse AS libelleclasse, COUNT(sm.id) AS quantite
+           FROM stockmanuels sm
+           JOIN manuels m ON m.id = sm.manuels_id
+           JOIN classes c ON c.id = m.classes_id
+           JOIN etablissements e ON e.id = sm.etablissements_id
+           WHERE e.drenas_id = ? AND sm.statutmanules_id = 1
+           GROUP BY c.id, c.libelleclasse
+           ORDER BY c.libelleclasse`,
+          [drenasID],
+          (_, {rows}) => {
+            setStockParNiveau(rows.raw());
+          },
+        );
+
+        tx.executeSql(
+          `SELECT COUNT(sm.id) AS total
+           FROM stockmanuels sm
+           JOIN etablissements e ON e.id = sm.etablissements_id
+           WHERE e.drenas_id = ? AND sm.statutmanules_id = 1`,
+          [drenasID],
+          (_, {rows}) => {
+            if (rows.length > 0) {
+              setTotalStockDispo(rows.item(0).total || 0);
+            } else {
+              setTotalStockDispo(0);
+            }
+          },
+        );
       },
       err => {
         setError('Erreur de transaction lors du chargement.');
@@ -181,6 +229,53 @@ const StockManuels = () => {
         <ErrorState subtitle={error} onAction={fetchData} />
       ) : (
         <>
+      <View style={styles.summaryContainer}>
+        <TouchableOpacity
+          onPress={() => setSummaryOpen(prev => !prev)}
+          style={styles.summaryHeader}
+          accessibilityRole="button"
+          accessibilityLabel="Afficher ou masquer le stock global de manuels"
+        >
+          <Text style={styles.summaryTitle}>Stock de manuels disponibles (DRENA)</Text>
+          <Icon
+            name={summaryOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+            size={20}
+            color="#333"
+          />
+        </TouchableOpacity>
+
+        {summaryOpen && (
+          <View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Cumul disponible</Text>
+              <Text style={styles.summaryValue}>{totalStockDispo}</Text>
+            </View>
+
+            <Text style={styles.summarySubtitle}>Par matière</Text>
+            {stockParMatiere.map(item => (
+              <View
+                key={`mat-${item.manuels_id}`}
+                style={styles.summaryRow}
+              >
+                <Text style={styles.summaryLabel}>{item.titre}</Text>
+                <Text style={styles.summaryValue}>{item.quantite}</Text>
+              </View>
+            ))}
+
+            <Text style={styles.summarySubtitle}>Par niveau</Text>
+            {stockParNiveau.map(item => (
+              <View
+                key={`niv-${item.classes_id}`}
+                style={styles.summaryRow}
+              >
+                <Text style={styles.summaryLabel}>{item.libelleclasse}</Text>
+                <Text style={styles.summaryValue}>{item.quantite}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+
       <PaperTextInput
         mode="outlined"
         placeholder="Rechercher..."
@@ -363,6 +458,55 @@ const styles = StyleSheet.create({
   container: {padding: 10},
   searchInput: {
     marginBottom: 10,
+  },
+  summaryContainer: {
+    marginBottom: 12,
+    padding: 12,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  summarySubtitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  summaryText: {
+    fontSize: 14,
+    marginTop: 2,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: 2,
+  },
+  summaryLabel: {
+    fontSize: 14,
+    color: '#555',
+    flex: 1,
+    marginRight: 8,
+  },
+  summaryValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#007AFF',
   },
   card: {padding: 15, margin: 10, backgroundColor: '#eee', borderRadius: 10},
   title: {fontSize: 18, fontWeight: 'bold'},

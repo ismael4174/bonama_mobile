@@ -1,6 +1,17 @@
 import React, {useState, useEffect} from 'react';
-import {View, Text, FlatList, TouchableOpacity, StyleSheet, Modal, Alert} from 'react-native';
-import {TextInput as PaperTextInput, Button as PaperButton} from 'react-native-paper';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  Modal,
+  Alert,
+} from 'react-native';
+import {
+  TextInput as PaperTextInput,
+  Button as PaperButton,
+} from 'react-native-paper';
 import uuid from 'react-native-uuid';
 import {db} from '../../db/database';
 import CustomPicker from '../CustomPicker';
@@ -35,14 +46,16 @@ const ManuelEleves = ({navigation, route}) => {
     if (eleveInscritId) {
       db.transaction(tx => {
         tx.executeSql(
-          `SELECT elevesinscrits.id, eleves.matriculeeleve, eleves.nomeleve, eleves.prenomseleve
+          `SELECT elevesinscrits.id, elevesinscrits.etablissements_id, elevesinscrits.remisefinalise, eleves.matriculeeleve, eleves.nomeleve, eleves.prenomseleve
            FROM elevesinscrits
            JOIN eleves ON eleves.id = elevesinscrits.eleves_id
            WHERE elevesinscrits.id = ?`,
           [eleveInscritId],
           (_, results) => {
             if (results.rows.length > 0) {
-              setEleve(results.rows.item(0));
+              const eleveData = results.rows.item(0);
+              setEleve(eleveData);
+              setIsLocked(eleveData.remisefinalise === 1);
             }
           },
           error => console.log('Erreur chargement élève', error),
@@ -59,9 +72,9 @@ const ManuelEleves = ({navigation, route}) => {
 
   const fetchData = () => {
     db.transaction(tx => {
-      // ❗️ On ne charge ici que les exemplaires disponibles (statutmanuels_id = 1)
+      // Charger tous les exemplaires pour pouvoir afficher la référence et l'état même si le statut n'est plus "disponible"
       tx.executeSql(
-        'SELECT id, referenceexemplaire, manuels_id FROM stockmanuels WHERE statutmanules_id = 1;',
+        'SELECT id, referenceexemplaire, manuels_id, etatmanuels_id FROM stockmanuels;',
         [],
         (_, results) => setStockmanuels(results.rows.raw()),
       );
@@ -95,11 +108,20 @@ const ManuelEleves = ({navigation, route}) => {
 
   // 🔹 Filtrer les exemplaires disponibles pour un manuel
   const filterStockForManuel = manuelId => {
-    if (!manuelId) return setFilteredStock([]);
+    if (!manuelId || !eleve?.etablissements_id) return setFilteredStock([]);
     db.transaction(tx => {
       tx.executeSql(
-        'SELECT id, referenceexemplaire FROM stockmanuels WHERE statutmanules_id = 1 AND manuels_id = ?;',
-        [manuelId],
+        `SELECT sm.id, sm.referenceexemplaire
+         FROM stockmanuels sm
+         JOIN etablissements et ON et.id = sm.etablissements_id
+         LEFT JOIN manuelseleves me
+           ON me.exemplairemanuelseleve_id = sm.id
+          AND me.rendu = 0
+         WHERE sm.statutmanules_id = 1
+           AND sm.manuels_id = ?
+           AND et.id = ?
+           AND me.id IS NULL;`,
+        [manuelId, eleve.etablissements_id],
         (_, results) => setFilteredStock(results.rows.raw()),
         (_, error) =>
           console.log('Erreur chargement exemplaires filtrés :', error),
@@ -148,22 +170,48 @@ const ManuelEleves = ({navigation, route}) => {
                       results.rows.item(0).nbremanuelsrenseignes;
                     if (nbreManuel === nbremanuelsrenseignes) {
                       tx.executeSql(
-                        'UPDATE elevesinscrits SET remisefinalise = 1 WHERE id = ?',
+                        `UPDATE manuelseleves
+                         SET etatmanuelsremiseeleve_id = (
+                           SELECT sm.etatmanuels_id
+                           FROM stockmanuels sm
+                           WHERE sm.id = manuelseleves.exemplairemanuelseleve_id
+                         )
+                         WHERE elevesinscrits_id = ?
+                           AND exemplairemanuelseleve_id IS NOT NULL`,
                         [eleveInscritId],
                         () => {
                           tx.executeSql(
-                            'INSERT INTO sync_log (table_name, record_id, uuid, source, action, data) VALUES (?, ?, ?, ?, ?, ?)',
-                            [
-                              'elevesinscrits',
-                              eleveInscritId,
-                              newUuid,
-                              'local',
-                              'update',
-                              JSON.stringify({remisefinalise: 1}),
-                            ],
+                            `UPDATE stockmanuels
+                             SET statutmanules_id = 2
+                             WHERE id IN (
+                               SELECT DISTINCT exemplairemanuelseleve_id
+                               FROM manuelseleves
+                               WHERE elevesinscrits_id = ?
+                                 AND exemplairemanuelseleve_id IS NOT NULL
+                             )`,
+                            [eleveInscritId],
                             () => {
-                              Alert.alert('Succès', 'Remise finalisée !');
-                              navigation.goBack();
+                              tx.executeSql(
+                                'UPDATE elevesinscrits SET remisefinalise = 1 WHERE id = ?',
+                                [eleveInscritId],
+                                () => {
+                                  tx.executeSql(
+                                    'INSERT INTO sync_log (uuid, table_name, record_id, action, data, source) VALUES (?, ?, ?, ?, ?, ?)',
+                                    [
+                                      newUuid,
+                                      'elevesinscrits',
+                                      eleveInscritId,
+                                      'update',
+                                      JSON.stringify({remisefinalise: 1}),
+                                      'local',
+                                    ],
+                                    () => {
+                                      Alert.alert('Succès', 'Remise finalisée !');
+                                      navigation.goBack();
+                                    },
+                                  );
+                                },
+                              );
                             },
                           );
                         },
@@ -214,14 +262,14 @@ const ManuelEleves = ({navigation, route}) => {
             (_, resultUpdate) => {
               if (resultUpdate.rowsAffected > 0) {
                 tx.executeSql(
-                  'INSERT INTO sync_log (uuid, source, table_name, record_id, action, data) VALUES (?, ?, ?, ?, ?, ?)',
+                  'INSERT INTO sync_log (uuid, table_name, record_id, action, data, source) VALUES (?, ?, ?, ?, ?, ?)',
                   [
                     uuid3,
-                    'mobile',
                     'manuelseleves',
                     data.id,
                     'update',
                     JSON.stringify(data),
+                    'local',
                   ],
                 );
                 fetchManuels(eleveInscritId);
@@ -236,25 +284,69 @@ const ManuelEleves = ({navigation, route}) => {
     });
   };
 
+  const selectedExemplaire = stockmanuels.find(
+    s => s.id === formData.exemplairemanuelseleve_id,
+  );
+
+  const availableReferenceOptions = filteredStock
+    .filter(ex => {
+      const usedIds = manuels
+        .filter(
+          m =>
+            m.elevesinscrits_id === eleveInscritId &&
+            m.manuels_id === (formData?.manuels_id ?? m.manuels_id) &&
+            m.id !== formData?.id,
+        )
+        .map(m => m.exemplairemanuelseleve_id)
+        .filter(Boolean);
+      return !usedIds.includes(ex.id);
+    })
+    .map(ex => ({
+      label: ex.referenceexemplaire,
+      value: ex.id,
+    }));
+
+  let referenceOptions = availableReferenceOptions;
+
+  if (selectedExemplaire && formData.exemplairemanuelseleve_id) {
+    const exists = availableReferenceOptions.some(
+      opt => opt.value === formData.exemplairemanuelseleve_id,
+    );
+    if (!exists) {
+      referenceOptions = [
+        {
+          label: selectedExemplaire.referenceexemplaire,
+          value: formData.exemplairemanuelseleve_id,
+        },
+        ...availableReferenceOptions,
+      ];
+    }
+  }
+
   return (
     <View style={styles.container}>
       <FlatList
         ListHeaderComponent={
           <View style={{backgroundColor: '#fff'}}>
-            <PaperTextInput
+            {/* <PaperTextInput
               mode="outlined"
               placeholder="Rechercher..."
               value={search}
               onChangeText={setSearch}
               style={styles.searchInput}
               left={<PaperTextInput.Icon icon="magnify" />}
-            />
+            /> */}
 
-            <PaperButton style={{marginTop: 8}} onPress={() => navigation.goBack()}>
+            <PaperButton
+              style={{marginTop: 8}}
+              onPress={() => navigation.goBack()}>
               Précédent
             </PaperButton>
 
-            <PaperButton mode="contained" style={{marginTop: 8}} onPress={handleFinaliserRemise}>
+            <PaperButton
+              mode="contained"
+              style={{marginTop: 8}}
+              onPress={handleFinaliserRemise}>
               Finaliser cette remise
             </PaperButton>
 
@@ -282,12 +374,15 @@ const ManuelEleves = ({navigation, route}) => {
           const monexemplaire = exemplaire
             ? exemplaire.referenceexemplaire
             : 'Inconnu';
-          const etatmanuelremise = etatmanuels.find(
-            s => s.id === item.etatmanuelsremiseeleve_id,
-          );
+          // L'état à la remise est désormais lu depuis l'exemplaire en stock
+          const etatmanuelremise = exemplaire
+            ? etatmanuels.find(e => e.id === exemplaire.etatmanuels_id)
+            : null;
           const monetatremise = etatmanuelremise
             ? etatmanuelremise.etatmanuel
             : 'Inconnu';
+
+          const remiseFinalisee = eleve?.remisefinalise === 1;
 
           return (
             <View style={styles.card}>
@@ -295,27 +390,29 @@ const ManuelEleves = ({navigation, route}) => {
               <Text>Référence : {monexemplaire}</Text>
               <Text>État remise : {monetatremise}</Text>
               <View style={styles.actions}>
-                <TouchableOpacity
-                  onPress={() => {
-                    setEditingManuel(item);
-                    filterStockForManuel(item.manuels_id);
-                    setFormData({
-                      id: item.id,
-                      manuels_id: item.manuels_id ?? '',
-                      elevesinscrits_id: item.elevesinscrits_id ?? '',
-                      exemplairemanuelseleve_id:
-                        item.exemplairemanuelseleve_id ?? '',
-                      etatmanuelsremiseeleve_id:
-                        item.etatmanuelsremiseeleve_id ?? '',
-                      etatmanuelsretoureleve_id:
-                        item.etatmanuelsretoureleve_id ?? '',
-                      montantpenalite: item.montantpenalite ?? '',
-                      rendu: item.rendu === 1,
-                    });
-                    setModalVisible(true);
-                  }}>
-                  <Text style={{fontSize: 22}}>✏️</Text>
-                </TouchableOpacity>
+                {!remiseFinalisee && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setEditingManuel(item);
+                      filterStockForManuel(item.manuels_id);
+                      setFormData({
+                        id: item.id,
+                        manuels_id: item.manuels_id ?? '',
+                        elevesinscrits_id: item.elevesinscrits_id ?? '',
+                        exemplairemanuelseleve_id:
+                          item.exemplairemanuelseleve_id ?? '',
+                        etatmanuelsremiseeleve_id:
+                          item.etatmanuelsremiseeleve_id ?? '',
+                        etatmanuelsretoureleve_id:
+                          item.etatmanuelsretoureleve_id ?? '',
+                        montantpenalite: item.montantpenalite ?? '',
+                        rendu: item.rendu === 1,
+                      });
+                      setModalVisible(true);
+                    }}>
+                    <Text style={{fontSize: 22}}>✏️</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           );
@@ -347,36 +444,48 @@ const ManuelEleves = ({navigation, route}) => {
                 setFormData({...formData, manuels_id: value});
                 filterStockForManuel(value);
               }}
-              isDisabled={isLocked}
+              isDisabled={true}
             />
             <Text>Référence</Text>
-            <CustomPicker
-              label="Référence"
-              items={filteredStock.map(ex => ({
-                label: ex.referenceexemplaire,
-                value: ex.id,
-              }))}
-              selectedId={formData.exemplairemanuelseleve_id}
-              onValueChange={value =>
-                setFormData({...formData, exemplairemanuelseleve_id: value})
-              }
-            />
-            <Text>État à la remise</Text>
-            <CustomPicker
-              label="État Remise"
-              items={etatmanuels.map(etat => ({
-                label: etat.etatmanuel,
-                value: etat.id,
-              }))}
-              selectedId={formData.etatmanuelsremiseeleve_id}
-              onValueChange={value =>
-                setFormData({...formData, etatmanuelsremiseeleve_id: value})
-              }
-            />
+            {eleve?.remisefinalise === 1 ? (
+              <PaperTextInput
+                mode="outlined"
+                value={selectedExemplaire?.referenceexemplaire || ''}
+                editable={false}
+                style={{marginBottom: 8}}
+              />
+            ) : (
+              <CustomPicker
+                label="Référence"
+                items={[
+                  {
+                    label: 'Sélectionner une référence',
+                    value: null,
+                    isPlaceholder: true,
+                  },
+                  ...referenceOptions,
+                ]}
+                selectedId={formData.exemplairemanuelseleve_id}
+                onValueChange={value => {
+                  const selected = stockmanuels.find(s => s.id === value);
+                  setFormData({
+                    ...formData,
+                    exemplairemanuelseleve_id: value,
+                    etatmanuelsremiseeleve_id: selected
+                      ? selected.etatmanuels_id
+                      : '',
+                  });
+                }}
+                placeholder="Sélectionner une référence"
+              />
+            )}
+            {/* L'état à la remise provient désormais de stockmanuels et n'est plus modifiable ici */}
             <PaperButton mode="contained" onPress={handleSave}>
               Enregistrer
             </PaperButton>
-            <PaperButton style={{marginTop: 8}} onPress={() => setModalVisible(false)}>
+            <PaperButton
+              style={{marginTop: 8}}
+              onPress={() => setModalVisible(false)}>
               Annuler
             </PaperButton>
           </View>
@@ -429,3 +538,4 @@ const styles = StyleSheet.create({
 });
 
 export default ManuelEleves;
+

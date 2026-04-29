@@ -39,13 +39,15 @@ const ElevesAttendus1 = () => {
       let params = [anneescolairesID, drenasID];
 
       if (searchText) {
-        query += ` AND (e.nomeleve LIKE ? OR e.matriculeeleve LIKE ? OR e.prenomseleve LIKE ?)`;
-        params = [
-          ...params,
-          `%${searchText}%`,
-          `%${searchText}%`,
-          `%${searchText}%`,
-        ];
+        query += ` AND (
+    UPPER(e.nomeleve) LIKE ?
+    OR UPPER(e.prenomseleve) LIKE ?
+    OR UPPER(e.matriculeeleve) LIKE ?
+    OR UPPER(COALESCE(e.nomeleve,'') || ' ' || COALESCE(e.prenomseleve,'')) LIKE ?
+  )`;
+
+        const like = `%${searchText.toUpperCase()}%`;
+        params.push(like, like, like, like);
       }
 
       tx.executeSql(
