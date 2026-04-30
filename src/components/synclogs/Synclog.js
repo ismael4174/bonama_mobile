@@ -66,6 +66,14 @@ const deleteSyncLog = id => {
   });
 };
 
+const clearAllLogs = () => {
+  return new Promise((resolve, reject) => {
+    db.transaction(tx => {
+      tx.executeSql('DELETE FROM sync_log', [], resolve, reject);
+    });
+  });
+};
+
 const SyncLogs = () => {
   const [logs, setLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -159,6 +167,30 @@ const SyncLogs = () => {
     ]);
   };
 
+  const handleClearAllLogs = () => {
+    Alert.alert(
+      'Confirmation',
+      'Êtes-vous sûr de vouloir vider tous les logs ?',
+      [
+        {text: 'Annuler', style: 'cancel'},
+        {
+          text: 'Vider',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await clearAllLogs();
+              loadLogs();
+            } catch (error) {
+              console.error('Erreur lors du vidage des logs:', error);
+              Alert.alert('Erreur', 'Une erreur s''est produite lors du vidage des logs.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+
   const renderLogItem = ({item}) => (
     <View style={styles.card}>
       <View>
@@ -193,6 +225,11 @@ const SyncLogs = () => {
       <Button
         title="Ajouter un log"
         onPress={() => setIsAddModalVisible(true)}
+      />
+      <Button
+        title="Vider tous les logs"
+        color="red"
+        onPress={handleClearAllLogs}
       />
 
       {isLoading ? (

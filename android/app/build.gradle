@@ -131,5 +131,14 @@ dependencies {
     
 }
 
+// Nom personnalisé de l'APK : bonamas-v{versionName}.apk
+android.applicationVariants.all { variant ->
+    variant.outputs.all { output ->
+        def versionName = variant.versionName
+        def buildType = variant.buildType.name
+        outputFileName = "bonamas-v${versionName}-${buildType}.apk"
+    }
+}
+
 // Ensure vector icon fonts are bundled with the app
 apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"

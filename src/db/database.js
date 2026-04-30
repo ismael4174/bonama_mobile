@@ -114,6 +114,8 @@ const resetDatabaseDrena = async () => {
       'detailsreceptiondrena',
       'detailsreceptions',
       'detailstransferts',
+      'transferts',
+      'detailsreceptiondrena',
       'eleves',
       'elevesinscrits',
       'etablissementannees',
@@ -2698,7 +2700,9 @@ const initializeDataEtab = async (idetablissement, anneeScolaireId, force = fals
     },
   ];
 
-  await Promise.all(tables.map(t => initializeTable(t.name, t.url)));
+  for (const t of tables) {
+    await initializeTable(t.name, t.url);
+  }
 
   await AsyncStorage.setItem('etabDataInitialized', 'true');
   console.log('✅ Initialisation établissement terminée.');
@@ -2902,9 +2906,12 @@ const initializeDataDrena = async (idDrena, anneeScolaireId, force = false) => {
     return {table: table.name, success: false};
   };
 
-  // ⚡ Lancer toutes les requêtes en même temps
-  console.log(`🚀 Téléchargement simultané de ${tables.length} tables...`);
-  const results = await Promise.all(tables.map(t => initializeWithRetry(t)));
+  // Téléchargement séquentiel pour éviter le rate limiting (429)
+  console.log(`🚀 Téléchargement séquentiel de ${tables.length} tables...`);
+  const results = [];
+  for (const t of tables) {
+    results.push(await initializeWithRetry(t));
+  }
 
   const success = results.filter(r => r.success).length;
   const failed = results.filter(r => !r.success).map(r => r.table);
@@ -2941,9 +2948,9 @@ const initializeData = async () => {
       // {name: 'api', url: monurl + 'apis'},
     ];
 
-    await Promise.all(
-      tables.map(table => initializeTable(table.name, table.url)),
-    );
+    for (const table of tables) {
+      await initializeTable(table.name, table.url);
+    }
     console.log('Initialisation des données terminée.');
   } catch (error) {
     console.error("Erreur lors de l'initialisation des données:", error);
@@ -3355,6 +3362,28 @@ const getNationalites = () => {
 };
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Requête GET avec retry automatique sur 429 (backoff exponentiel)
+const axiosGetWithRetry = async (url, maxRetries = 4) => {
+  let delay = 1000;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await axios.get(url);
+    } catch (err) {
+      const status = err.response?.status;
+      if (status === 429 && attempt < maxRetries) {
+        const retryAfter = parseInt(err.response?.headers?.['retry-after'] || '0', 10);
+        const waitMs = retryAfter > 0 ? retryAfter * 1000 : delay;
+        console.warn(`⏳ 429 pour ${url} (tentative ${attempt + 1}/${maxRetries}), attente ${waitMs}ms...`);
+        await sleep(waitMs);
+        delay = Math.min(delay * 2, 30000);
+      } else {
+        throw err;
+      }
+    }
+  }
+};
+
 /* Version simple
 const initializeTable = async (tableName, apiUrl) => {
   try {
@@ -3750,17 +3779,58 @@ const initializeTable = async (tableName, apiUrl) => {
 };
 */
 
-// Fonction générique pour initialiser une table avec données API
+// Fonction générique pour initialiser une table avec données API (pagination complète)
 const initializeTable = async (tableName, url) => {
   try {
-    const response = await axios.get(url);
+    let allRecords = [];
+    let currentPage = 1;
+    let totalPages = Infinity;
 
-    // Normaliser les données reçues
-    let records = response?.data?.data ?? response?.data ?? [];
-    if (!Array.isArray(records)) records = [records];
-    if (!records.length) {
+    while (currentPage <= totalPages) {
+      const pageUrl = `${url}?page=${currentPage}`;
+      console.log(`📡 [${tableName}] Page ${currentPage}/${totalPages === Infinity ? '?' : totalPages}`);
+
+      let response;
+      try {
+        response = await axiosGetWithRetry(pageUrl);
+      } catch (err) {
+        if (err.response?.status === 404) {
+          console.warn(`🚫 ${tableName} page ${currentPage} introuvable. Arrêt.`);
+          break;
+        }
+        throw err;
+      }
+
+      // Message métier sans données (ex: "Aucun X trouvé")
+      if (response.data?.message && !response.data?.data) {
+        console.warn(`📭 ${tableName} : ${response.data.message}`);
+        break;
+      }
+
+      const raw = response?.data?.data ?? response?.data ?? [];
+      const pageRecords = Array.isArray(raw) ? raw : [raw];
+      if (!pageRecords.length) break;
+
+      allRecords = allRecords.concat(pageRecords);
+
+      // Détecter la dernière page
+      if (response.data?.meta?.last_page) {
+        totalPages = response.data.meta.last_page;
+      } else if (response.data?.last_page) {
+        totalPages = response.data.last_page;
+      } else if (response.data?.per_page && pageRecords.length < response.data.per_page) {
+        break; // Dernière page (moins de résultats que per_page)
+      } else if (!response.data?.meta && !response.data?.per_page) {
+        break; // Pas de pagination, toutes les données sont là
+      }
+
+      currentPage++;
+      if (currentPage <= totalPages) await sleep(500);
+    }
+
+    if (!allRecords.length) {
       console.warn(`⚠️ Aucune donnée trouvée pour la table "${tableName}".`);
-      return;
+      return 0;
     }
 
     // Récupérer les colonnes de la table SQLite
@@ -3774,12 +3844,12 @@ const initializeTable = async (tableName, url) => {
       console.error(
         `❌ Impossible de récupérer les colonnes pour ${tableName}.`,
       );
-      return;
+      return 0;
     }
 
     let insertedCount = 0;
 
-    for (const record of records) {
+    for (const record of allRecords) {
       if (typeof record !== 'object' || record === null) continue;
 
       // Ne garder que les colonnes existantes
@@ -3802,11 +3872,7 @@ const initializeTable = async (tableName, url) => {
 
       const placeholders = filteredKeys.map(() => '?').join(',');
 
-      // On utilise INSERT OR IGNORE pour éviter de remplacer des lignes existantes
-      const sql = `
-        INSERT OR IGNORE INTO ${tableName} (${filteredKeys.join(',')})
-        VALUES (${placeholders})
-      `;
+      const sql = `INSERT OR IGNORE INTO ${tableName} (${filteredKeys.join(',')}) VALUES (${placeholders})`;
 
       try {
         await executeSql(sql.trim(), values);
@@ -3820,13 +3886,15 @@ const initializeTable = async (tableName, url) => {
     }
 
     console.log(
-      `✅ Table "${tableName}" initialisée (${insertedCount} lignes insérées).`,
+      `✅ Table "${tableName}" initialisée (${insertedCount}/${allRecords.length} lignes insérées).`,
     );
+    return insertedCount;
   } catch (error) {
     console.error(
       `❌ Erreur lors de l'initialisation de ${tableName}:`,
       error.message,
     );
+    throw error;
   }
 };
 

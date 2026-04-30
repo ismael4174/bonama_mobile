@@ -8,21 +8,14 @@ import {
   Alert,
   TextInput,
   Modal,
-  TouchableOpacity, // Import TouchableOpacity
+  TouchableOpacity,
 } from 'react-native';
 import {db} from '../../db/database';
 import CustomPicker from '../CustomPicker';
+import uuid from 'react-native-uuid';
 
 const Transferts = () => {
-  /////////////////////////////
-  const [lordre, setLordre] = useState('');
   const [lanneescolaire, setLanneescolaire] = useState('');
-  const [lecodezone, setLecodezone] = useState('');
-  const [codeetab, setCodeetab] = useState('');
-  const [manuels, setManuels] = useState([]);
-  const [manuelsAsup, setManuelsAsup] = useState([]);
-  const [synclogs, setSynclogs] = useState([]);
-  //////////////////////////
   const [searchTerm, setSearchTerm] = useState('');
   const [transferts, setTransferts] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -39,7 +32,6 @@ const Transferts = () => {
     classes_id: '',
     quantite: '',
   });
-  const [newDetail, setNewDetail] = useState({stockmanuels_id: ''});
 
   useEffect(() => {
     fetchTransferts();
@@ -48,15 +40,15 @@ const Transferts = () => {
   const fetchTransferts = () => {
     db.transaction(tx => {
       tx.executeSql(
-        `SELECT 
-          transferts.*, 
-          e1.nometablissement AS etablissement1_nom, 
-          e2.nometablissement AS etablissement2_nom 
-        FROM transferts 
-        LEFT JOIN etablissements e1 ON transferts.etablissements_id = e1.id 
+        `SELECT
+          transferts.*,
+          e1.nometablissement AS etablissement1_nom,
+          e2.nometablissement AS etablissement2_nom
+        FROM transferts
+        LEFT JOIN etablissements e1 ON transferts.etablissements_id = e1.id
         LEFT JOIN etablissements e2 ON transferts.etablissements_id1 = e2.id`,
         [],
-        (tx, results) => {
+        (_, results) => {
           const temp = [];
           for (let i = 0; i < results.rows.length; ++i) {
             temp.push(results.rows.item(i));
@@ -64,34 +56,26 @@ const Transferts = () => {
           setTransferts(temp);
         },
       );
-      /*tx.executeSql('SELECT * FROM sync_log', [], (tx, results) => {
-        const temp = [];
-        for (let i = 0; i < results.rows.length; ++i) {
-          temp.push(results.rows.item(i));
-        }
-        setSynclogs(temp);
-      });*/
       tx.executeSql(
         'SELECT id, nometablissement FROM etablissements;',
         [],
         (_, results) => {
           setEtablissements(results.rows.raw());
         },
-        error => console.log('Erreur lors du chargement des manuels', error),
+        error => console.log('Erreur lors du chargement des établissements', error),
       );
       tx.executeSql(
-        'SELECT anneescolaires.libelleabrege FROM parametrages join anneescolaires on anneescolaires.id = parametrages.anneescolaires_id where parametrages.id=1;',
+        `SELECT anneescolaires.libelleabrege
+         FROM parametrages
+         JOIN anneescolaires ON anneescolaires.id = parametrages.anneescolaires_id
+         WHERE parametrages.id = 1`,
         [],
         (_, results) => {
           if (results.rows.length > 0) {
             setLanneescolaire(results.rows.item(0).libelleabrege);
           }
         },
-        error =>
-          console.log(
-            'Erreur lors de la recuperation de lannee scolaire',
-            error,
-          ),
+        error => console.log('Erreur lors de la récupération de l\'année scolaire', error),
       );
       tx.executeSql(
         'SELECT id, libelletypemanuel FROM typemanuels;',
@@ -99,7 +83,7 @@ const Transferts = () => {
         (_, results) => {
           setTypesManuels(results.rows.raw());
         },
-        error => console.log('Erreur lors du chargement des manuels', error),
+        error => console.log('Erreur lors du chargement des types de manuels', error),
       );
       tx.executeSql(
         'SELECT id, libelleclasse FROM classes;',
@@ -107,12 +91,12 @@ const Transferts = () => {
         (_, results) => {
           setClasses(results.rows.raw());
         },
-        error => console.log('Erreur lors du chargement des manuels', error),
+        error => console.log('Erreur lors du chargement des classes', error),
       );
     });
   };
+
   const handleAjouterTransfert = () => {
-    // Réinitialise formData à ses valeurs initiales
     setFormData({
       etablissements_id: '',
       etablissements_id1: '',
@@ -120,10 +104,7 @@ const Transferts = () => {
       classes_id: '',
       quantite: '',
     });
-    // Réinitialise selectedTransfert à null
     setSelectedTransfert(null);
-
-    // Affiche le modal
     setShowForm(true);
   };
 
@@ -138,35 +119,25 @@ const Transferts = () => {
           style: 'destructive',
           onPress: () => {
             db.transaction(tx => {
-              tx.executeSql('DELETE FROM transferts WHERE id = ?', [id], () => {
-                // Insertion dans sync_log pour transferts (delete)
-                tx.executeSql(
-                  'INSERT INTO sync_log (table_name, record_id, action, data, last_modified) VALUES (?, ?, ?, ?, ?)',
-                  [
-                    'transferts',
-                    id,
-                    'delete',
-                    JSON.stringify({id}),
-                    new Date().toISOString(),
-                  ],
-                );
-                fetchTransferts();
-              });
               tx.executeSql(
                 'DELETE FROM detailstransferts WHERE transferts_id = ?',
                 [id],
                 () => {
-                  // Insertion dans sync_log pour detailstransferts (delete)
                   tx.executeSql(
-                    'INSERT INTO sync_log (table_name, record_id, action, data, last_modified) VALUES (?, ?, ?, ?, ?)',
-                    [
-                      'detailstransferts',
-                      id,
-                      'delete',
-                      JSON.stringify({transferts_id: id}),
-                      new Date().toISOString(),
-                    ],
+                    'INSERT INTO sync_log (uuid, source, table_name, record_id, action, data) VALUES (?, ?, ?, ?, ?, ?)',
+                    [uuid.v4(), 'local', 'detailstransferts', id, 'delete', JSON.stringify({transferts_id: id})],
                   );
+                },
+              );
+              tx.executeSql(
+                'DELETE FROM transferts WHERE id = ?',
+                [id],
+                () => {
+                  tx.executeSql(
+                    'INSERT INTO sync_log (uuid, source, table_name, record_id, action, data) VALUES (?, ?, ?, ?, ?, ?)',
+                    [uuid.v4(), 'local', 'transferts', id, 'delete', JSON.stringify({id})],
+                  );
+                  fetchTransferts();
                 },
               );
             });
@@ -176,6 +147,7 @@ const Transferts = () => {
       {cancelable: false},
     );
   };
+
   const handleEdit = transfert => {
     setSelectedTransfert(transfert);
     setFormData({
@@ -183,7 +155,7 @@ const Transferts = () => {
       etablissements_id1: transfert.etablissements_id1,
       typemanuels_id: transfert.typemanuels_id,
       classes_id: transfert.classes_id,
-      quantite: transfert.quantite.toString(), // Assurez-vous que c'est une chaîne
+      quantite: transfert.quantite.toString(),
     });
     setShowForm(true);
   };
@@ -194,7 +166,7 @@ const Transferts = () => {
       tx.executeSql(
         'SELECT * FROM detailstransferts WHERE transferts_id = ?',
         [transfert.id],
-        (tx, results) => {
+        (_, results) => {
           const temp = [];
           for (let i = 0; i < results.rows.length; ++i) {
             temp.push(results.rows.item(i));
@@ -210,13 +182,14 @@ const Transferts = () => {
     setFormData({...formData, [name]: value});
   };
 
-  const handleDetailChange = (name, value) => {
-    setNewDetail({...newDetail, [name]: value});
-  };
-
   const handleSubmit = () => {
-    //recuperation du num de etablissement de depart et calcul du nouveau num depart
-    //recuperation du num de etablissement accueil et calcul du nouveau num accueil
+    if (formData.etablissements_id === formData.etablissements_id1) {
+      Alert.alert(
+        'Transfert de manuels',
+        'Vous ne pouvez pas transférer des manuels dans le même établissement',
+      );
+      return;
+    }
 
     if (selectedTransfert) {
       db.transaction(tx => {
@@ -231,16 +204,17 @@ const Transferts = () => {
             selectedTransfert.id,
           ],
           () => {
-            // Insertion dans sync_log pour transferts (update)
             tx.executeSql(
-              'INSERT INTO sync_log (table_name, record_id, action, data, last_modified) VALUES (?, ?, ?, ?, ?)',
-              [
-                'transferts',
-                selectedTransfert.id,
-                'update',
-                JSON.stringify(formData),
-                new Date().toISOString(),
-              ],
+              'INSERT INTO sync_log (uuid, source, table_name, record_id, action, data) VALUES (?, ?, ?, ?, ?, ?)',
+              [uuid.v4(), 'local', 'transferts', selectedTransfert.id, 'update', JSON.stringify({
+                id: selectedTransfert.id,
+                drenas_id: selectedTransfert.drenas_id,
+                etablissements_id: formData.etablissements_id,
+                etablissements_id1: formData.etablissements_id1,
+                typemanuels_id: formData.typemanuels_id,
+                classes_id: formData.classes_id,
+                quantite: parseInt(formData.quantite, 10),
+              })],
             );
             fetchTransferts();
             setShowForm(false);
@@ -248,187 +222,222 @@ const Transferts = () => {
           },
         );
       });
-    } else {
-      db.transaction(tx => {
-        tx.executeSql(
-          'INSERT INTO transferts (etablissements_id, etablissements_id1, typemanuels_id, classes_id, quantite) VALUES (?, ?, ?, ?, ?)',
-          [
-            formData.etablissements_id,
-            formData.etablissements_id1,
-            formData.typemanuels_id,
-            formData.classes_id,
-            formData.quantite,
-          ],
-          (tx, result) => {
-            const transfertsId = result.insertId;
-            // Insertion dans sync_log pour transferts (insert)
-            tx.executeSql(
-              'INSERT INTO sync_log (table_name, record_id, action, data, last_modified) VALUES (?, ?, ?, ?, ?)',
-              [
-                'transferts',
-                transfertsId,
-                'insert',
-                JSON.stringify(formData),
-                new Date().toISOString(),
-              ],
-            );
-            //// recuperation des paramètres pour insertion dans details et modification de stocks////
-            tx.executeSql(
-              'SELECT codeetablissement FROM etablissements where etablissements.id=?',
-              [formData.etablissements_id1],
-              (_, results) => {
-                if (results.rows.length > 0) {
-                  setCodeetab(results.rows.item(0).codeetablissement);
-                }
-              },
-              error =>
-                console.log(
-                  'Erreur lors de la recuperation du code etablissement',
-                  error,
-                ),
-            );
-
-            tx.executeSql(
-              'SELECT nummanuel FROM etablissements where etablissements.id=?',
-              [formData.etablissements_id1],
-              (_, results) => {
-                if (results.rows.length > 0) {
-                  setCodeetab(results.rows.item(0).nummanuel);
-                }
-              },
-              error =>
-                console.log(
-                  'Erreur lors de la recuperation du numero du manuel',
-                  error,
-                ),
-            );
-
-            tx.executeSql(
-              'SELECT drenas.codedrenaabrege FROM drenas JOIN etablissements on etablissements.drenas_id = drenas.id  where etablissements.id=?',
-              [formData.etablissements_id1],
-              (_, results) => {
-                if (results.rows.length > 0) {
-                  setLecodezone(results.rows.item(0).codedrenaabrege);
-                }
-              },
-              error =>
-                console.log(
-                  'Erreur lors de la recuperation du code de la drena',
-                  error,
-                ),
-            );
-            tx.executeSql(
-              'SELECT manuels.id FROM manuels  WHERE manuels.typemanuels_id=? AND manuels.classes_id=?',
-              [formData.typemanuels_id, formData.classes_id],
-              (_, results) => {
-                setManuels(results.rows.raw());
-              },
-              error =>
-                console.log(
-                  'Erreur lors de la recuperation du code de la drena',
-                  error,
-                ),
-            );
-            tx.executeSql(
-              'SELECT etblissements.num FROM etablissements  WHERE etablissements.id=?',
-              [formData.etablissements_id1],
-              (_, results) => {
-                //setLordre(results.rows.raw());
-                if (results.rows.length > 0) {
-                  setLordre(results.rows.item(0).num);
-                }
-              },
-              error =>
-                console.log(
-                  'Erreur lors de la recuperation du code de la drena',
-                  error,
-                ),
-            );
-            /*
-            /// fin recuperation des parametres pour insertion dans details et modification de stocks//////
-            //boucle foreach sur manuels
-            const manuelsData = manuels; // Récupérer les données de manuels une seule fois
-            for (let i = 0; i < manuelsData.length; i++) {
-              const manuel = manuelsData[i];
-              //////////////////////////
-              tx.executeSql(
-                'SELECT stockmanuels.id FROM stockmanuels WHERE stockmanuels.manuels_id=? AND stockmanuels.etablissements_id=? AND stockmanuels.statutmanules_id=1 order by stockmanuels.i desc limit(?)',
-                [manuel.id, formData.etablissements_id, formData.quantite],
-                (_, results) => {
-                  setManuelsAsup(results.rows.raw());
-                },
-                error =>
-                  console.log(
-                    'Erreur lors de la recuperation du code de la drena',
-                    error,
-                  ),
-              );
-              const manuelsAsupData = manuelsAsup;
-              let monordre = lordre;
-              for (let j = 0; j < manuelsAsupData.length; j++) {
-                const manuelsup = manuelsAsupData[j];
-                monordre = monordre + 1;
-                //insertion dans detailstransferts
-                tx.executeSql(
-                  'INSERT INTO detailstransferts (transferts_id, stockmanuels_id) VALUES (?, ?)',
-                  [transfertsId, manuelsup.id],
-                  () => {
-                    const nouvelleReference =
-                      lanneescolaire + '_' + lecodezone + '_' + codeetab + '_';
-                    manuelsup.id.referencemanuel + '_' + monordre;
-                    tx.executeSql(
-                      'UPDATE stockmanuels SET etablissements_id = ?,referenceexemplaire = ? WHERE id = ?',
-                      [
-                        formData.etablissements_id1,
-                        nouvelleReference,
-                        manuelsup.id,
-                      ],
-                    );
-                  },
-                  error =>
-                    console.log(
-                      'Erreur lors de la recuperation du code de la drena',
-                      error,
-                    ),
-                );
-              }
-            }
-
-            //modification du num de l'établissement de depart
-            //modification du num de l'établissement d'accueil
-            */
-            fetchTransferts();
-            setShowForm(false);
-            setSelectedTransfert(null);
-          },
-        );
-      });
+      return;
     }
-  };
 
-  const handleAddDetail = () => {
+    const nbreManuels = parseInt(formData.quantite, 10);
+    if (!nbreManuels || nbreManuels <= 0) {
+      Alert.alert('Erreur', 'Veuillez saisir une quantité valide');
+      return;
+    }
+
     db.transaction(tx => {
+      // Récupérer les paramètres de l'établissement d'accueil en un seul JOIN
       tx.executeSql(
-        'INSERT INTO detailstransferts (transferts_id, stockmanuels_id) VALUES (?, ?)',
-        [selectedTransfert.id, newDetail.stockmanuels_id],
-        () => {
-          // Insertion dans sync_log pour detailstransferts (insert)
+        `SELECT
+           e1.codeetablissement, e1.nummanuel AS nummanuel_accueil, e1.drenas_id, d.codedrenaabrege,
+           e2.nummanuel AS nummanuel_depart
+         FROM etablissements e1
+         JOIN drenas d ON d.id = e1.drenas_id
+         JOIN etablissements e2 ON e2.id = ?
+         WHERE e1.id = ?`,
+        [formData.etablissements_id, formData.etablissements_id1],
+        (_, resAccueil) => {
+          if (resAccueil.rows.length === 0) {
+            Alert.alert('Erreur', "Établissement d'accueil introuvable");
+            return;
+          }
+          const codeetab = resAccueil.rows.item(0).codeetablissement;
+          const anciennum = resAccueil.rows.item(0).nummanuel_accueil;
+          const lecodezone = resAccueil.rows.item(0).codedrenaabrege;
+          const drenas_id = resAccueil.rows.item(0).drenas_id;
+          const nummanueldDepart = resAccueil.rows.item(0).nummanuel_depart;
+
+          // Récupérer les manuels correspondant au type et à la classe
           tx.executeSql(
-            'INSERT INTO sync_log (table_name, record_id, action, data, last_modified) VALUES (?, ?, ?, ?, ?)',
-            [
-              'detailstransferts',
-              null,
-              'insert',
-              JSON.stringify({
-                transferts_id: selectedTransfert.id,
-                stockmanuels_id: newDetail.stockmanuels_id,
-              }),
-              new Date().toISOString(),
-            ],
+            'SELECT id, referencemanuel FROM manuels WHERE typemanuels_id = ? AND classes_id = ?',
+            [formData.typemanuels_id, formData.classes_id],
+            (_, resManuels) => {
+              const manuels = [];
+              for (let i = 0; i < resManuels.rows.length; i++) {
+                manuels.push(resManuels.rows.item(i));
+              }
+
+              if (manuels.length === 0) {
+                Alert.alert('Erreur', 'Aucun manuel trouvé pour ce type et ce niveau');
+                return;
+              }
+
+              // Vérification récursive des stocks pour chaque manuel
+              const verifierStocks = (index, onDone) => {
+                if (index >= manuels.length) {
+                  onDone(true);
+                  return;
+                }
+                const manuel = manuels[index];
+                tx.executeSql(
+                  `SELECT id FROM stockmanuels
+                   WHERE manuels_id = ? AND etablissements_id = ? AND statutmanules_id = 1
+                   ORDER BY id DESC LIMIT ?`,
+                  [manuel.id, formData.etablissements_id, nbreManuels],
+                  (_, resStock) => {
+                    if (resStock.rows.length < nbreManuels) {
+                      Alert.alert(
+                        'Transfert de manuels',
+                        `Pas assez de manuels disponibles pour le manuel ID: ${manuel.id}`,
+                      );
+                      onDone(false);
+                      return;
+                    }
+                    verifierStocks(index + 1, onDone);
+                  },
+                  error => {
+                    console.log('Erreur vérification stock', error);
+                    onDone(false);
+                  },
+                );
+              };
+
+              verifierStocks(0, ok => {
+                if (!ok) return;
+
+                // Insérer le transfert
+                tx.executeSql(
+                  'INSERT INTO transferts (drenas_id, etablissements_id, etablissements_id1, typemanuels_id, classes_id, quantite) VALUES (?, ?, ?, ?, ?, ?)',
+                  [
+                    drenas_id,
+                    formData.etablissements_id,
+                    formData.etablissements_id1,
+                    formData.typemanuels_id,
+                    formData.classes_id,
+                    nbreManuels,
+                  ],
+                  (_, resInsert) => {
+                    const transfertsId = resInsert.insertId;
+
+                    tx.executeSql(
+                      'INSERT INTO sync_log (uuid, source, table_name, record_id, action, data) VALUES (?, ?, ?, ?, ?, ?)',
+                      [uuid.v4(), 'local', 'transferts', transfertsId, 'insert', JSON.stringify({
+                        drenas_id,
+                        etablissements_id: formData.etablissements_id,
+                        etablissements_id1: formData.etablissements_id1,
+                        typemanuels_id: formData.typemanuels_id,
+                        classes_id: formData.classes_id,
+                        quantite: nbreManuels,
+                      })],
+                    );
+
+                    // Traitement récursif de chaque type de manuel
+                    const traiterManuel = manuelIndex => {
+                      if (manuelIndex >= manuels.length) {
+                        // Mise à jour du nummanuel des deux établissements
+                        tx.executeSql(
+                          'UPDATE etablissements SET nummanuel = nummanuel - ? WHERE id = ?',
+                          [nbreManuels, formData.etablissements_id],
+                          () => {
+                            tx.executeSql(
+                              'INSERT INTO sync_log (uuid, source, table_name, record_id, action, data) VALUES (?, ?, ?, ?, ?, ?)',
+                              [uuid.v4(), 'local', 'etablissements', formData.etablissements_id, 'update', JSON.stringify({
+                                id: formData.etablissements_id,
+                                nummanuel: nummanueldDepart - nbreManuels,
+                              })],
+                            );
+                          },
+                        );
+                        tx.executeSql(
+                          'UPDATE etablissements SET nummanuel = nummanuel + ? WHERE id = ?',
+                          [nbreManuels, formData.etablissements_id1],
+                          () => {
+                            tx.executeSql(
+                              'INSERT INTO sync_log (uuid, source, table_name, record_id, action, data) VALUES (?, ?, ?, ?, ?, ?)',
+                              [uuid.v4(), 'local', 'etablissements', formData.etablissements_id1, 'update', JSON.stringify({
+                                id: formData.etablissements_id1,
+                                nummanuel: anciennum + nbreManuels,
+                              })],
+                            );
+                          },
+                        );
+                        fetchTransferts();
+                        setShowForm(false);
+                        setSelectedTransfert(null);
+                        return;
+                      }
+
+                      const manuel = manuels[manuelIndex];
+                      // lordre repart de anciennum pour chaque type de manuel (comme dans le PHP)
+                      let lordre = anciennum;
+
+                      tx.executeSql(
+                        `SELECT s.id FROM stockmanuels s
+                         WHERE s.manuels_id = ? AND s.etablissements_id = ? AND s.statutmanules_id = 1
+                         ORDER BY s.id DESC LIMIT ?`,
+                        [manuel.id, formData.etablissements_id, nbreManuels],
+                        (_, resStocks) => {
+                          const stocks = [];
+                          for (let j = 0; j < resStocks.rows.length; j++) {
+                            stocks.push(resStocks.rows.item(j));
+                          }
+
+                          // Traitement récursif de chaque exemplaire
+                          const traiterStock = stockIndex => {
+                            if (stockIndex >= stocks.length) {
+                              traiterManuel(manuelIndex + 1);
+                              return;
+                            }
+
+                            lordre = lordre + 1;
+                            const stock = stocks[stockIndex];
+                            const nouvelleReference = `${lanneescolaire}_${lecodezone}_${codeetab}_${manuel.referencemanuel}_${lordre}`;
+
+                            tx.executeSql(
+                              'INSERT INTO detailstransferts (transferts_id, stockmanuels_id) VALUES (?, ?)',
+                              [transfertsId, stock.id],
+                              (_, resDetail) => {
+                                const detailId = resDetail.insertId;
+                                tx.executeSql(
+                                  'INSERT INTO sync_log (uuid, source, table_name, record_id, action, data) VALUES (?, ?, ?, ?, ?, ?)',
+                                  [uuid.v4(), 'local', 'detailstransferts', detailId, 'insert', JSON.stringify({
+                                    transferts_id: transfertsId,
+                                    stockmanuels_id: stock.id,
+                                  })],
+                                );
+                                tx.executeSql(
+                                  'UPDATE stockmanuels SET etablissements_id = ?, referenceexemplaire = ? WHERE id = ?',
+                                  [formData.etablissements_id1, nouvelleReference, stock.id],
+                                  () => {
+                                    tx.executeSql(
+                                      'INSERT INTO sync_log (uuid, source, table_name, record_id, action, data) VALUES (?, ?, ?, ?, ?, ?)',
+                                      [uuid.v4(), 'local', 'stockmanuels', stock.id, 'update', JSON.stringify({
+                                        id: stock.id,
+                                        etablissements_id: formData.etablissements_id1,
+                                        referenceexemplaire: nouvelleReference,
+                                      })],
+                                    );
+                                    traiterStock(stockIndex + 1);
+                                  },
+                                  error => console.log('Erreur mise à jour stockmanuel', error),
+                                );
+                              },
+                              error => console.log('Erreur insertion détail transfert', error),
+                            );
+                          };
+
+                          traiterStock(0);
+                        },
+                        error => console.log('Erreur récupération stocks', error),
+                      );
+                    };
+
+                    traiterManuel(0);
+                  },
+                  error => console.log('Erreur insertion transfert', error),
+                );
+              });
+            },
+            error => console.log('Erreur récupération manuels', error),
           );
-          handleDetails(selectedTransfert);
-          setNewDetail({stockmanuels_id: ''});
         },
+        error => console.log('Erreur récupération établissement accueil', error),
       );
     });
   };
@@ -439,19 +448,12 @@ const Transferts = () => {
         'DELETE FROM detailstransferts WHERE transferts_id = ? AND stockmanuels_id = ?',
         [selectedTransfert.id, stockmanuelsId],
         () => {
-          // Insertion dans sync_log pour detailstransferts (delete)
           tx.executeSql(
-            'INSERT INTO sync_log (table_name, record_id, action, data, last_modified) VALUES (?, ?, ?, ?, ?)',
-            [
-              'detailstransferts',
-              selectedTransfert.id,
-              'delete',
-              JSON.stringify({
-                transferts_id: selectedTransfert.id,
-                stockmanuels_id: stockmanuelsId,
-              }),
-              new Date().toISOString(),
-            ],
+            'INSERT INTO sync_log (uuid, source, table_name, record_id, action, data) VALUES (?, ?, ?, ?, ?, ?)',
+            [uuid.v4(), 'local', 'detailstransferts', selectedTransfert.id, 'delete', JSON.stringify({
+              transferts_id: selectedTransfert.id,
+              stockmanuels_id: stockmanuelsId,
+            })],
           );
           handleDetails(selectedTransfert);
         },
@@ -467,21 +469,14 @@ const Transferts = () => {
         onChangeText={text => setSearchTerm(text)}
         placeholderTextColor="black"
       />
-      <Button
-        title="Ajouter un Transfert"
-        onPress={handleAjouterTransfert}
-        /* onPress={() => {
-          setShowForm(true);
-        }}*/
-      />
+      <Button title="Ajouter un Transfert" onPress={handleAjouterTransfert} />
       <FlatList
-        //data={transferts}
         data={transferts.filter(
           item =>
-            item.etablissement1_nom
+            (item.etablissement1_nom ?? '')
               .toLowerCase()
               .includes(searchTerm.toLowerCase()) ||
-            item.etablissement2_nom
+            (item.etablissement2_nom ?? '')
               .toLowerCase()
               .includes(searchTerm.toLowerCase()) ||
             item.quantite.toString().includes(searchTerm),
@@ -492,10 +487,8 @@ const Transferts = () => {
             style={styles.card}
             onPress={() => handleDetails(item)}>
             <Text>ID: {item.id}</Text>
-            {/*<Text>Etablissement 1: {item.etablissements_id}</Text>
-            <Text>Etablissement 2: {item.etablissements_id1}</Text>*/}
-            <Text>Etablissement 1: {item.etablissement1_nom}</Text>
-            <Text>Etablissement 2: {item.etablissement2_nom}</Text>
+            <Text>Établissement départ: {item.etablissement1_nom}</Text>
+            <Text>Établissement accueil: {item.etablissement2_nom}</Text>
             <Text>Quantité: {item.quantite}</Text>
             <View style={styles.cardButtons}>
               <Button title="Modifier" onPress={() => handleEdit(item)} />
@@ -516,31 +509,31 @@ const Transferts = () => {
             <Text style={styles.title}>
               {selectedTransfert ? 'Modifier Transfert' : 'Ajouter Transfert'}
             </Text>
-            <Text>Etablissement de départ</Text>
+            <Text>Établissement de départ</Text>
             <CustomPicker
               selectedId={formData.etablissements_id}
               style={styles.picker}
               onValueChange={itemValue =>
                 handleChange('etablissements_id', itemValue)
               }
-              items={etablissements.map(etablissement => ({
-                label: etablissement.nometablissement,
-                value: etablissement.id,
+              items={etablissements.map(e => ({
+                label: e.nometablissement,
+                value: e.id,
               }))}
-              placeholder="Sélectionner Etablissement 1"
+              placeholder="Sélectionner Établissement de départ"
             />
-            <Text>Etablissement d'accueil</Text>
+            <Text>Établissement d'accueil</Text>
             <CustomPicker
               selectedId={formData.etablissements_id1}
               style={styles.picker}
               onValueChange={itemValue =>
                 handleChange('etablissements_id1', itemValue)
               }
-              items={etablissements.map(etablissement => ({
-                label: etablissement.nometablissement,
-                value: etablissement.id,
+              items={etablissements.map(e => ({
+                label: e.nometablissement,
+                value: e.id,
               }))}
-              placeholder="Sélectionner Etablissement 2"
+              placeholder="Sélectionner Établissement d'accueil"
             />
             <Text>Type de manuels</Text>
             <CustomPicker
@@ -549,9 +542,9 @@ const Transferts = () => {
               onValueChange={itemValue =>
                 handleChange('typemanuels_id', itemValue)
               }
-              items={typesManuels.map(typeManuel => ({
-                label: typeManuel.libelletypemanuel,
-                value: typeManuel.id,
+              items={typesManuels.map(t => ({
+                label: t.libelletypemanuel,
+                value: t.id,
               }))}
               placeholder="Sélectionner Type Manuel"
             />
@@ -560,21 +553,19 @@ const Transferts = () => {
               selectedId={formData.classes_id}
               style={styles.picker}
               onValueChange={itemValue => handleChange('classes_id', itemValue)}
-              items={classes.map(classe => ({
-                label: classe.libelleclasse,
-                value: classe.id,
+              items={classes.map(c => ({
+                label: c.libelleclasse,
+                value: c.id,
               }))}
               placeholder="Sélectionner Classe"
             />
-
             <Text>Quantité</Text>
             <TextInput
               style={styles.input}
               placeholder="Quantité"
+              keyboardType="numeric"
               value={formData.quantite.toString()}
-              onChangeText={text =>
-                handleChange('quantite', parseInt(text, 10))
-              }
+              onChangeText={text => handleChange('quantite', text)}
             />
             <View style={styles.buttonContainer}>
               <Button title="Annuler" onPress={() => setShowForm(false)} />
@@ -607,17 +598,6 @@ const Transferts = () => {
                 </View>
               )}
             />
-            {/* <View style={styles.addDetailContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="Stock Manuel ID"
-                value={newDetail.stockmanuels_id}
-                onChangeText={text =>
-                  handleDetailChange('stockmanuels_id', text)
-                }
-              />
-              <Button title="Ajouter" onPress={handleAddDetail} />
-            </View>*/}
             <Button title="Fermer" onPress={() => setShowDetails(false)} />
           </View>
         </View>
@@ -644,22 +624,20 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
   },
   cardButtons: {
-    flexDirection: 'row', // ou 'column' pour une disposition verticale
+    flexDirection: 'row',
     justifyContent: 'space-around',
     marginTop: 10,
   },
-
   item: {
     padding: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#ccc',
   },
   modalContainer: {
-    // Nouveau style pour le conteneur du modal
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)', // Fond semi-transparent
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
     backgroundColor: 'white',
@@ -668,9 +646,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 4,
     borderColor: 'rgba(0, 0, 0, 0.1)',
-    width: '80%', // Ajustez la largeur selon vos besoins
+    width: '80%',
   },
-
   title: {
     fontSize: 20,
     marginBottom: 10,
@@ -683,7 +660,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     color: 'black',
   },
-
   buttonContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -697,11 +673,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#ccc',
   },
-  addDetailContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-  },
   picker: {
     width: '100%',
     height: 50,
@@ -709,7 +680,6 @@ const styles = StyleSheet.create({
     borderColor: '#ccc',
     borderWidth: 1,
   },
-
   searchInput: {
     height: 40,
     borderColor: 'gray',

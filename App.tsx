@@ -232,13 +232,7 @@ const CustomDrawerContent1 = ({navigation}) => {
         <List.Item title="Tableau de bord" left={props => <List.Icon {...props} icon="view-dashboard" />} onPress={() => navigation.navigate('Tableau de bord')} />
         <List.Item title="Documentation" left={props => <List.Icon {...props} icon="file-document" />} onPress={() => navigation.navigate('Documentation')} />
         <List.Item title="Paramètres généraux" left={props => <List.Icon {...props} icon="cog" />} onPress={() => navigation.navigate('Paramètres généraux')} />
-        {/** Transferts de manuels (désactivé) */}
-        {/**
-        <Drawer.Screen
-          name="Transferts de manuels"
-          component={TransfertStack1}
-        />
-        */}
+        <List.Item title="Transferts de manuels" left={props => <List.Icon {...props} icon="transfer" />} onPress={() => navigation.navigate('Transferts de manuels')} />
         <List.Item title="Liste des manuels" left={props => <List.Icon {...props} icon="book" />} onPress={() => navigation.navigate('Liste des manuels')} />
         <List.Item title="Souscriptions" left={props => <List.Icon {...props} icon="account-group" />} onPress={() => navigation.navigate('Souscriptions')} />
         <List.Item title="Recap Etab" left={props => <List.Icon {...props} icon="school" />} onPress={() => navigation.navigate('Recap Etab')} />
@@ -370,12 +364,12 @@ function DrawerScreens1({navigation}) {
           component={ParametresStack1}
         />
         {/** Transferts de manuels (désactivé) */}
-        {/**
+        
         <Drawer.Screen
           name="Transferts de manuels"
           component={TransfertStack1}
         />
-        */}
+        
         <Drawer.Screen name="Liste des manuels" component={ManuelRetrouve1} />
         <Drawer.Screen name="Souscriptions" component={SouscripteursStack1} />
         <Drawer.Screen name="Recap Etab" component={EtablissementchoisiStack} />
