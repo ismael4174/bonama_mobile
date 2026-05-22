@@ -28,11 +28,11 @@ const ElevesInscrits = ({navigation}) => {
           ei.retourfinalise,
           (SELECT COUNT(*) FROM manuelseleves me
            WHERE me.elevesinscrits_id = ei.id
-             AND me.exemplairemanuelseleve_id IS NOT NULL) AS nb_remis,
+             AND COALESCE(me.exemplairemanuelseleve_id, 0) != 0) AS nb_remis,
           (SELECT COUNT(*) FROM manuelseleves me
            WHERE me.elevesinscrits_id = ei.id
-             AND me.exemplairemanuelseleve_id IS NOT NULL
-             AND me.etatmanuelsretoureleve_id IS NOT NULL) AS nb_retournes_renseignes
+             AND COALESCE(me.exemplairemanuelseleve_id, 0) != 0
+             AND COALESCE(me.etatmanuelsretoureleve_id, 0) != 0) AS nb_retournes_renseignes
         FROM elevesinscrits ei
         JOIN anneescolaires a ON ei.anneescolaires_id = a.id
         JOIN eleves e ON ei.eleves_id = e.id

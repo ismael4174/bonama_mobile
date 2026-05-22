@@ -12,41 +12,35 @@ export default class AuthenticationService {
             [username],
             (_, {rows}) => {
               if (rows.length > 0) {
-                const user = rows.item(0); // Accéder correctement aux données
+                const foundUser = rows.item(0);
 
-                if (!user.password) {
-                  reject(new Error('Mot de passe non trouvé.'));
+                if (!foundUser.password) {
+                  reject(new Error('Mot de passe non trouve.'));
                   return;
                 }
 
-                // Vérification du mot de passe avec bcrypt
                 const passwordMatch = bcrypt.compareSync(
                   password,
-                  user.password,
+                  foundUser.password,
                 );
 
                 if (passwordMatch) {
-                  resolve(user);
+                  resolve(foundUser);
                 } else {
-                  reject(
-                    new Error('Nom d’utilisateur ou mot de passe incorrect.'),
-                  );
+                  reject(new Error('Nom utilisateur ou mot de passe incorrect.'));
                 }
               } else {
-                reject(
-                  new Error('Nom d’utilisateur ou mot de passe incorrect.'),
-                );
+                reject(new Error('USER_NOT_FOUND'));
               }
             },
-            (_, error) =>
+            () =>
               reject(
-                new Error('Erreur lors de la vérification des identifiants.'),
+                new Error('Erreur lors de la verification des identifiants.'),
               ),
           );
         });
       });
 
-      // Stockage des données utilisateur
       await AsyncStorage.setItem('user', JSON.stringify(user));
       if (user.drenas_id) {
         await AsyncStorage.setItem('drenas_id', user.drenas_id.toString());
@@ -89,8 +83,6 @@ export default class AuthenticationService {
       'drenas_id',
       'etablissements_id',
       'ues_id',
-      //'drenaDataInitialized',
-      //'etabDataInitialized',
     ]);
   }
 }

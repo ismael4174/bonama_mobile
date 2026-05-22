@@ -8,10 +8,11 @@ import CustomPicker from '../CustomPicker';
 // Grille de pénalités : [état remise][état retour] → coefficient
 // État 1 = Neuf, 2 = Bon état, 3 = Etat moyen, 4 = Mauvais état, 6 = Perdu
 const GRILLE_PENALITES = {
-  1: {1: 0, 2: 0, 3: 0.25},   // remise=Neuf: retour Neuf→0, Bon→0, Moyen→0.25, autre→1
-  2: {1: 0, 2: 0, 3: 0},      // remise=Bon: retour Neuf→0, Bon→0, Moyen→0, autre→0.5
+  1: {1: 0, 2: 0, 3: 0.25}, // remise=Neuf: retour Neuf→0, Bon→0, Moyen→0.25, autre→1
+  2: {1: 0, 2: 0, 3: 0},    // remise=Bon: retour Neuf→0, Bon→0, Moyen→0, autre→0.5
+  3: {1: 0, 2: 0, 3: 0},    // remise=Moyen: tout retour→0
 };
-const PENALITE_DEFAULT = {1: 1, 2: 0.5};
+const PENALITE_DEFAULT = {1: 1, 2: 0.5, 3: 0};
 
 const getPenaliteCoef = (etatRemise, etatRetour) => {
   const ligne = GRILLE_PENALITES[etatRemise];
@@ -107,7 +108,7 @@ const ManuelEleves = ({navigation, route}) => {
     db.transaction(tx => {
       // Compter les manuels effectivement remis (avec un exemplaire associé)
       tx.executeSql(
-        'SELECT COUNT(*) as nbremanuelsremis FROM manuelseleves WHERE elevesinscrits_id = ? AND exemplairemanuelseleve_id IS NOT NULL',
+        'SELECT COUNT(*) as nbremanuelsremis FROM manuelseleves WHERE elevesinscrits_id = ? AND COALESCE(exemplairemanuelseleve_id, 0) != 0 AND COALESCE(etatmanuelsremiseeleve_id, 0) != 0',
         [eleveInscritId],
         (_, results) => {
           const nbremanuelsremis = results.rows.item(0).nbremanuelsremis;
@@ -119,7 +120,7 @@ const ManuelEleves = ({navigation, route}) => {
 
           // Compter les manuels remis sans état au retour renseigné
           tx.executeSql(
-            'SELECT COUNT(*) as nbremanuelnonrenseigne FROM manuelseleves WHERE elevesinscrits_id = ? AND exemplairemanuelseleve_id IS NOT NULL AND etatmanuelsretoureleve_id IS NULL',
+            'SELECT COUNT(*) as nbremanuelnonrenseigne FROM manuelseleves WHERE elevesinscrits_id = ? AND COALESCE(exemplairemanuelseleve_id, 0) != 0 AND COALESCE(etatmanuelsretoureleve_id, 0) = 0',
             [eleveInscritId],
             (_, results) => {
               const nbremanuelnonrenseigne =
@@ -141,7 +142,7 @@ const ManuelEleves = ({navigation, route}) => {
                   const coutmanuel = resParam.rows.item(0)?.coutmanuel || 0;
 
                   tx.executeSql(
-                    `SELECT m.id, m.exemplairemanuelseleve_id,
+                    `SELECT m.id, m.uuid, m.exemplairemanuelseleve_id,
                             m.etatmanuelsremiseeleve_id, m.etatmanuelsretoureleve_id
                      FROM manuelseleves m
                      WHERE m.elevesinscrits_id = ? AND m.exemplairemanuelseleve_id IS NOT NULL`,
@@ -149,6 +150,10 @@ const ManuelEleves = ({navigation, route}) => {
                     (_, resManuels) => {
                       const rows = resManuels.rows.raw();
                       let totalPenalite = 0;
+                      const dateretour = new Date().toISOString().slice(0, 10);
+                      const nombremanuelsretournes = rows.filter(
+                        m => m.etatmanuelsretoureleve_id !== 6,
+                      ).length;
 
                       rows.forEach(m => {
                         const coef = getPenaliteCoef(
@@ -158,29 +163,34 @@ const ManuelEleves = ({navigation, route}) => {
                         const montant = coutmanuel * coef;
                         totalPenalite += montant;
                         const rendu = m.etatmanuelsretoureleve_id === 6 ? 0 : 1;
+                        const manuelUuid = m.uuid || uuid.v4();
 
                         tx.executeSql(
                           'UPDATE manuelseleves SET montantpenalite = ?, rendu = ? WHERE id = ?',
                           [montant, rendu, m.id],
                         );
+                        tx.executeSql(
+                          'INSERT INTO sync_log (uuid, source, table_name, record_id, action, data) VALUES (?, ?, ?, ?, ?, ?)',
+                          [
+                            manuelUuid,
+                            'local',
+                            'manuelseleves',
+                            m.id,
+                            'update',
+                            JSON.stringify({montantpenalite: montant, rendu}),
+                          ],
+                        );
 
-                        // Manuel perdu : ne pas remettre en stock disponible
-                        if (m.etatmanuelsretoureleve_id === 6) {
-                          tx.executeSql(
-                            'UPDATE stockmanuels SET etatmanuels_id = ? WHERE id = ?',
-                            [m.etatmanuelsretoureleve_id, m.exemplairemanuelseleve_id],
-                          );
-                        } else {
-                          tx.executeSql(
-                            'UPDATE stockmanuels SET statutmanules_id = 1, etatmanuels_id = ? WHERE id = ?',
-                            [m.etatmanuelsretoureleve_id, m.exemplairemanuelseleve_id],
-                          );
-                        }
+                        // Remettre le stock en disponible pour tous les manuels retournés
+                        tx.executeSql(
+                          'UPDATE stockmanuels SET statutmanules_id = 1, etatmanuels_id = ? WHERE id = ?',
+                          [m.etatmanuelsretoureleve_id, m.exemplairemanuelseleve_id],
+                        );
                       });
 
                       tx.executeSql(
-                        'UPDATE elevesinscrits SET penalite = ? WHERE id = ?',
-                        [totalPenalite, eleveInscritId],
+                        'UPDATE elevesinscrits SET penalite = ?, nombremanuelsretourneseleve = ?, dateretoureffectiveeleve = ? WHERE id = ?',
+                        [totalPenalite, nombremanuelsretournes, dateretour, eleveInscritId],
                         () => {
                           tx.executeSql(
                             'SELECT uuid FROM elevesinscrits WHERE id = ?',
@@ -209,6 +219,8 @@ const ManuelEleves = ({navigation, route}) => {
                                       JSON.stringify({
                                         retourfinalise: 1,
                                         penalite: totalPenalite,
+                                        nombremanuelsretourneseleve: nombremanuelsretournes,
+                                        dateretoureffectiveeleve: dateretour,
                                       }),
                                     ],
                                     () => {

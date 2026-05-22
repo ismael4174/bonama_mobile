@@ -2615,7 +2615,7 @@ CREATE TABLE IF NOT EXISTS transferts (
 };
 
 // Initialisation des données pour un établissement
-const initializeDataEtab = async (idetablissement, anneeScolaireId, force = false) => {
+const initializeDataEtab = async (idetablissement, anneeScolaireId, force = false, onProgress = null) => {
   const initialized = await AsyncStorage.getItem('etabDataInitialized');
   if (initialized === 'true' && !force) {
     console.log('ℹ️ Données établissement déjà initialisées.');
@@ -2700,9 +2700,12 @@ const initializeDataEtab = async (idetablissement, anneeScolaireId, force = fals
     },
   ];
 
-  for (const t of tables) {
+  for (let i = 0; i < tables.length; i++) {
+    const t = tables[i];
+    if (onProgress) onProgress(i, tables.length, t.name);
     await initializeTable(t.name, t.url);
   }
+  if (onProgress) onProgress(tables.length, tables.length, '');
 
   await AsyncStorage.setItem('etabDataInitialized', 'true');
   console.log('✅ Initialisation établissement terminée.');
@@ -2810,7 +2813,7 @@ const initializeDataEtab = async (idetablissement, anneeScolaireId, force = fals
 //   console.log('🎉 Initialisation DRENA terminée.');
 // };
 
-const initializeDataDrena = async (idDrena, anneeScolaireId, force = false) => {
+const initializeDataDrena = async (idDrena, anneeScolaireId, force = false, onProgress = null) => {
   console.log("🔄 Début de l'initialisation complète des données DRENA...");
 
   const initialized = await AsyncStorage.getItem('drenaDataInitialized');
@@ -2909,9 +2912,12 @@ const initializeDataDrena = async (idDrena, anneeScolaireId, force = false) => {
   // Téléchargement séquentiel pour éviter le rate limiting (429)
   console.log(`🚀 Téléchargement séquentiel de ${tables.length} tables...`);
   const results = [];
-  for (const t of tables) {
+  for (let i = 0; i < tables.length; i++) {
+    const t = tables[i];
+    if (onProgress) onProgress(i, tables.length, t.name);
     results.push(await initializeWithRetry(t));
   }
+  if (onProgress) onProgress(tables.length, tables.length, '');
 
   const success = results.filter(r => r.success).length;
   const failed = results.filter(r => !r.success).map(r => r.table);
@@ -3898,12 +3904,65 @@ const initializeTable = async (tableName, url) => {
   }
 };
 
+// Rafraîchit admin_users depuis le serveur avec INSERT OR REPLACE.
+// Utilisé comme fallback quand un utilisateur n'est pas trouvé localement.
+const refreshAdminUsers = async () => {
+  const url = monurl + 'users';
+  let allRecords = [];
+  let currentPage = 1;
+  let totalPages = Infinity;
+
+  while (currentPage <= totalPages) {
+    const pageUrl = `${url}?page=${currentPage}`;
+    let response;
+    try {
+      response = await axiosGetWithRetry(pageUrl);
+    } catch (err) {
+      if (err.response?.status === 404) break;
+      throw err;
+    }
+    if (response.data?.message && !response.data?.data) break;
+    const raw = response?.data?.data ?? response?.data ?? [];
+    const pageRecords = Array.isArray(raw) ? raw : [raw];
+    if (!pageRecords.length) break;
+    allRecords = allRecords.concat(pageRecords);
+    if (response.data?.meta?.last_page) {
+      totalPages = response.data.meta.last_page;
+    } else if (response.data?.last_page) {
+      totalPages = response.data.last_page;
+    } else {
+      break;
+    }
+    currentPage++;
+    if (currentPage <= totalPages) await sleep(300);
+  }
+
+  if (!allRecords.length) return;
+
+  const columnsRes = await executeSql('PRAGMA table_info(admin_users)');
+  const tableColumns = columnsRes?.rows?.raw()?.map(col => col.name).filter(Boolean) ?? [];
+
+  for (const record of allRecords) {
+    if (typeof record !== 'object' || !record) continue;
+    const filteredKeys = Object.keys(record).filter(k => tableColumns.includes(k));
+    if (!filteredKeys.length) continue;
+    const values = filteredKeys.map(k => record[k]);
+    const sql = `INSERT OR REPLACE INTO admin_users (${filteredKeys.join(',')}) VALUES (${filteredKeys.map(() => '?').join(',')})`;
+    try {
+      await executeSql(sql.trim(), values);
+    } catch {}
+  }
+};
+
 export {
   db,
   createTables,
   initializeData,
   initializeDataEtab,
   initializeDataDrena,
+  resetDatabase,
+  resetDatabaseDrena,
+  refreshAdminUsers,
   getAdminUsers,
   getNationalites,
   fetchAndInsertData,
