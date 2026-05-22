@@ -9,8 +9,8 @@ export const addSyncLog = (tableName, recordId, action, data) => {
   return new Promise((resolve, reject) => {
     db.transaction(tx => {
       tx.executeSql(
-        'INSERT INTO sync_log (table_name, record_id, action, data) VALUES (?, ?, ?, ?)',
-        [tableName, recordId, action, data],
+        'INSERT INTO sync_log (table_name, record_id, action, data, source) VALUES (?, ?, ?, ?, ?)',
+        [tableName, recordId, action, JSON.stringify(data), 'local'],
         (_, results) => resolve(results.insertId), // Resolve with the inserted ID
         (_, error) => reject(error),
       );

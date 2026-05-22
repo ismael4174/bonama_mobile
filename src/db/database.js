@@ -114,6 +114,8 @@ const resetDatabaseDrena = async () => {
       'detailsreceptiondrena',
       'detailsreceptions',
       'detailstransferts',
+      'transferts',
+      'detailsreceptiondrena',
       'eleves',
       'elevesinscrits',
       'etablissementannees',
@@ -596,6 +598,34 @@ const createTables = () => {
         BEGIN
           INSERT INTO etablissementannees (anneescolaires_id, etablissements_id)
           SELECT NEW.id, id FROM etablissements;
+        END;
+        `);
+      tx.executeSql(`
+        CREATE TRIGGER IF NOT EXISTS apresInsertionEtablissement
+        AFTER INSERT ON etablissements
+        BEGIN
+          INSERT INTO etablissementannees (anneescolaires_id, etablissements_id)
+          SELECT anneescolaires_id, NEW.id
+          FROM parametrages
+          WHERE id = 1;
+        END;
+        `);
+      tx.executeSql(`
+        CREATE TRIGGER IF NOT EXISTS apresinsertiondelapenalite
+        AFTER INSERT ON elevesinscrits
+        BEGIN
+          UPDATE eleves
+          SET penalite = NEW.penalite
+          WHERE id = NEW.eleves_id;
+        END;
+        `);
+      tx.executeSql(`
+        CREATE TRIGGER IF NOT EXISTS apresmodificationdelapenalite
+        AFTER UPDATE ON elevesinscrits
+        BEGIN
+          UPDATE eleves
+          SET penalite = NEW.penalite
+          WHERE id = OLD.eleves_id;
         END;
         `);
       tx.executeSql(`
@@ -1104,63 +1134,6 @@ const createTables = () => {
         }
       });
       ////////////////////////////////
-      tx.executeSql(`
-        CREATE TRIGGER apresinsertionmanuelues
-        AFTER INSERT ON manuelsues
-        FOR EACH ROW
-        BEGIN
-          UPDATE stockmanuels
-          SET statutmanules_id = 2
-          WHERE id = NEW.exemplairemanuels_id;
-        END;
-        `);
-      tx.executeSql(`
-        CREATE TRIGGER miseajourapresmodifue
-        AFTER UPDATE ON manuelsues
-        FOR EACH ROW
-        BEGIN
-          -- Ajoutez ici les actions à effectuer après la mise à jour
-        END;
-        `);
-      tx.executeSql(`
-        CREATE TRIGGER miseajourueapressuppression
-        BEFORE DELETE ON manuelsues
-        FOR EACH ROW
-        BEGIN
-          UPDATE stockmanuels
-          SET statutmanules_id = 1
-          WHERE id = OLD.exemplairemanuels_id;
-        END;
-        `);
-      tx.executeSql(`
-        CREATE TRIGGER "miseajourapressuppression" 
-        BEFORE DELETE ON "manuelseleves" 
-        FOR EACH ROW
-        BEGIN
-          IF OLD."exemplairemanuelseleve_id" IS NOT NULL THEN
-            UPDATE "stockmanuels" SET "statutmanules_id" = 1 WHERE "id" = OLD."exemplairemanuelseleve_id";
-          END IF;
-        END;
-        `);
-      tx.executeSql(`
-        CREATE TRIGGER "miseajourpenaliteapresmodif" 
-        AFTER UPDATE ON "manuelseleves"
-        FOR EACH ROW
-        BEGIN
-          -- Logique à ajouter ici selon vos besoins
-        END;
-        `);
-      tx.executeSql(`
-        CREATE TRIGGER IF NOT EXISTS "apresinsertionmanuelseleve"
-        AFTER INSERT ON "manuelseleves"
-        FOR EACH ROW
-        BEGIN
-          IF NEW.exemplairemanuelseleve_id IS NOT NULL THEN
-            UPDATE stockmanuels SET statutmanules_id = 2 WHERE id = NEW.exemplairemanuelseleve_id;
-          END IF;
-        END;
-        `);
-
       tx.executeSql(`
         DROP TABLE IF EXISTS cemanuels;
         `);
@@ -2642,7 +2615,7 @@ CREATE TABLE IF NOT EXISTS transferts (
 };
 
 // Initialisation des données pour un établissement
-const initializeDataEtab = async (idetablissement, anneeScolaireId, force = false) => {
+const initializeDataEtab = async (idetablissement, anneeScolaireId, force = false, onProgress = null) => {
   const initialized = await AsyncStorage.getItem('etabDataInitialized');
   if (initialized === 'true' && !force) {
     console.log('ℹ️ Données établissement déjà initialisées.');
@@ -2727,7 +2700,12 @@ const initializeDataEtab = async (idetablissement, anneeScolaireId, force = fals
     },
   ];
 
-  await Promise.all(tables.map(t => initializeTable(t.name, t.url)));
+  for (let i = 0; i < tables.length; i++) {
+    const t = tables[i];
+    if (onProgress) onProgress(i, tables.length, t.name);
+    await initializeTable(t.name, t.url);
+  }
+  if (onProgress) onProgress(tables.length, tables.length, '');
 
   await AsyncStorage.setItem('etabDataInitialized', 'true');
   console.log('✅ Initialisation établissement terminée.');
@@ -2835,7 +2813,7 @@ const initializeDataEtab = async (idetablissement, anneeScolaireId, force = fals
 //   console.log('🎉 Initialisation DRENA terminée.');
 // };
 
-const initializeDataDrena = async (idDrena, anneeScolaireId, force = false) => {
+const initializeDataDrena = async (idDrena, anneeScolaireId, force = false, onProgress = null) => {
   console.log("🔄 Début de l'initialisation complète des données DRENA...");
 
   const initialized = await AsyncStorage.getItem('drenaDataInitialized');
@@ -2931,9 +2909,15 @@ const initializeDataDrena = async (idDrena, anneeScolaireId, force = false) => {
     return {table: table.name, success: false};
   };
 
-  // ⚡ Lancer toutes les requêtes en même temps
-  console.log(`🚀 Téléchargement simultané de ${tables.length} tables...`);
-  const results = await Promise.all(tables.map(t => initializeWithRetry(t)));
+  // Téléchargement séquentiel pour éviter le rate limiting (429)
+  console.log(`🚀 Téléchargement séquentiel de ${tables.length} tables...`);
+  const results = [];
+  for (let i = 0; i < tables.length; i++) {
+    const t = tables[i];
+    if (onProgress) onProgress(i, tables.length, t.name);
+    results.push(await initializeWithRetry(t));
+  }
+  if (onProgress) onProgress(tables.length, tables.length, '');
 
   const success = results.filter(r => r.success).length;
   const failed = results.filter(r => !r.success).map(r => r.table);
@@ -2970,9 +2954,9 @@ const initializeData = async () => {
       // {name: 'api', url: monurl + 'apis'},
     ];
 
-    await Promise.all(
-      tables.map(table => initializeTable(table.name, table.url)),
-    );
+    for (const table of tables) {
+      await initializeTable(table.name, table.url);
+    }
     console.log('Initialisation des données terminée.');
   } catch (error) {
     console.error("Erreur lors de l'initialisation des données:", error);
@@ -3384,6 +3368,28 @@ const getNationalites = () => {
 };
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Requête GET avec retry automatique sur 429 (backoff exponentiel)
+const axiosGetWithRetry = async (url, maxRetries = 4) => {
+  let delay = 1000;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await axios.get(url);
+    } catch (err) {
+      const status = err.response?.status;
+      if (status === 429 && attempt < maxRetries) {
+        const retryAfter = parseInt(err.response?.headers?.['retry-after'] || '0', 10);
+        const waitMs = retryAfter > 0 ? retryAfter * 1000 : delay;
+        console.warn(`⏳ 429 pour ${url} (tentative ${attempt + 1}/${maxRetries}), attente ${waitMs}ms...`);
+        await sleep(waitMs);
+        delay = Math.min(delay * 2, 30000);
+      } else {
+        throw err;
+      }
+    }
+  }
+};
+
 /* Version simple
 const initializeTable = async (tableName, apiUrl) => {
   try {
@@ -3779,17 +3785,58 @@ const initializeTable = async (tableName, apiUrl) => {
 };
 */
 
-// Fonction générique pour initialiser une table avec données API
+// Fonction générique pour initialiser une table avec données API (pagination complète)
 const initializeTable = async (tableName, url) => {
   try {
-    const response = await axios.get(url);
+    let allRecords = [];
+    let currentPage = 1;
+    let totalPages = Infinity;
 
-    // Normaliser les données reçues
-    let records = response?.data?.data ?? response?.data ?? [];
-    if (!Array.isArray(records)) records = [records];
-    if (!records.length) {
+    while (currentPage <= totalPages) {
+      const pageUrl = `${url}?page=${currentPage}`;
+      console.log(`📡 [${tableName}] Page ${currentPage}/${totalPages === Infinity ? '?' : totalPages}`);
+
+      let response;
+      try {
+        response = await axiosGetWithRetry(pageUrl);
+      } catch (err) {
+        if (err.response?.status === 404) {
+          console.warn(`🚫 ${tableName} page ${currentPage} introuvable. Arrêt.`);
+          break;
+        }
+        throw err;
+      }
+
+      // Message métier sans données (ex: "Aucun X trouvé")
+      if (response.data?.message && !response.data?.data) {
+        console.warn(`📭 ${tableName} : ${response.data.message}`);
+        break;
+      }
+
+      const raw = response?.data?.data ?? response?.data ?? [];
+      const pageRecords = Array.isArray(raw) ? raw : [raw];
+      if (!pageRecords.length) break;
+
+      allRecords = allRecords.concat(pageRecords);
+
+      // Détecter la dernière page
+      if (response.data?.meta?.last_page) {
+        totalPages = response.data.meta.last_page;
+      } else if (response.data?.last_page) {
+        totalPages = response.data.last_page;
+      } else if (response.data?.per_page && pageRecords.length < response.data.per_page) {
+        break; // Dernière page (moins de résultats que per_page)
+      } else if (!response.data?.meta && !response.data?.per_page) {
+        break; // Pas de pagination, toutes les données sont là
+      }
+
+      currentPage++;
+      if (currentPage <= totalPages) await sleep(500);
+    }
+
+    if (!allRecords.length) {
       console.warn(`⚠️ Aucune donnée trouvée pour la table "${tableName}".`);
-      return;
+      return 0;
     }
 
     // Récupérer les colonnes de la table SQLite
@@ -3803,12 +3850,12 @@ const initializeTable = async (tableName, url) => {
       console.error(
         `❌ Impossible de récupérer les colonnes pour ${tableName}.`,
       );
-      return;
+      return 0;
     }
 
     let insertedCount = 0;
 
-    for (const record of records) {
+    for (const record of allRecords) {
       if (typeof record !== 'object' || record === null) continue;
 
       // Ne garder que les colonnes existantes
@@ -3831,11 +3878,7 @@ const initializeTable = async (tableName, url) => {
 
       const placeholders = filteredKeys.map(() => '?').join(',');
 
-      // On utilise INSERT OR IGNORE pour éviter de remplacer des lignes existantes
-      const sql = `
-        INSERT OR IGNORE INTO ${tableName} (${filteredKeys.join(',')})
-        VALUES (${placeholders})
-      `;
+      const sql = `INSERT OR IGNORE INTO ${tableName} (${filteredKeys.join(',')}) VALUES (${placeholders})`;
 
       try {
         await executeSql(sql.trim(), values);
@@ -3849,13 +3892,65 @@ const initializeTable = async (tableName, url) => {
     }
 
     console.log(
-      `✅ Table "${tableName}" initialisée (${insertedCount} lignes insérées).`,
+      `✅ Table "${tableName}" initialisée (${insertedCount}/${allRecords.length} lignes insérées).`,
     );
+    return insertedCount;
   } catch (error) {
     console.error(
       `❌ Erreur lors de l'initialisation de ${tableName}:`,
       error.message,
     );
+    throw error;
+  }
+};
+
+// Rafraîchit admin_users depuis le serveur avec INSERT OR REPLACE.
+// Utilisé comme fallback quand un utilisateur n'est pas trouvé localement.
+const refreshAdminUsers = async () => {
+  const url = monurl + 'users';
+  let allRecords = [];
+  let currentPage = 1;
+  let totalPages = Infinity;
+
+  while (currentPage <= totalPages) {
+    const pageUrl = `${url}?page=${currentPage}`;
+    let response;
+    try {
+      response = await axiosGetWithRetry(pageUrl);
+    } catch (err) {
+      if (err.response?.status === 404) break;
+      throw err;
+    }
+    if (response.data?.message && !response.data?.data) break;
+    const raw = response?.data?.data ?? response?.data ?? [];
+    const pageRecords = Array.isArray(raw) ? raw : [raw];
+    if (!pageRecords.length) break;
+    allRecords = allRecords.concat(pageRecords);
+    if (response.data?.meta?.last_page) {
+      totalPages = response.data.meta.last_page;
+    } else if (response.data?.last_page) {
+      totalPages = response.data.last_page;
+    } else {
+      break;
+    }
+    currentPage++;
+    if (currentPage <= totalPages) await sleep(300);
+  }
+
+  if (!allRecords.length) return;
+
+  const columnsRes = await executeSql('PRAGMA table_info(admin_users)');
+  const tableColumns = columnsRes?.rows?.raw()?.map(col => col.name).filter(Boolean) ?? [];
+
+  for (const record of allRecords) {
+    if (typeof record !== 'object' || !record) continue;
+    const filteredKeys = Object.keys(record).filter(k => tableColumns.includes(k));
+    if (!filteredKeys.length) continue;
+    const values = filteredKeys.map(k => record[k]);
+    const sql = `INSERT OR REPLACE INTO admin_users (${filteredKeys.join(',')}) VALUES (${filteredKeys.map(() => '?').join(',')})`;
+    try {
+      await executeSql(sql.trim(), values);
+    } catch {}
   }
 };
 
@@ -3865,6 +3960,9 @@ export {
   initializeData,
   initializeDataEtab,
   initializeDataDrena,
+  resetDatabase,
+  resetDatabaseDrena,
+  refreshAdminUsers,
   getAdminUsers,
   getNationalites,
   fetchAndInsertData,

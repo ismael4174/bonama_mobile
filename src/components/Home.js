@@ -1,5 +1,11 @@
 import React, {useState, useEffect, useCallback} from 'react';
 import {View, Text, StyleSheet, ScrollView} from 'react-native';
+import {
+  Surface,
+  Avatar,
+  useTheme,
+  Button as PaperButton,
+} from 'react-native-paper';
 import {db} from '../db/database';
 
 import useAnneescolairesID from '../parametres/anneescolaire.js';
@@ -7,6 +13,7 @@ import useEtablissementId from '../parametres/etablissement.js';
 import {useRefresh} from '../db/refreshContext.js'; // 👈 on ajoute ça
 
 export default function Home({navigation}) {
+  const theme = useTheme();
   const [annees, setAnnees] = useState([]);
   const [cesouscrit, setCesouscrit] = useState(null);
   const [elevesouscrit, setElevesouscrit] = useState(null);
@@ -125,49 +132,155 @@ export default function Home({navigation}) {
 
   return (
     <ScrollView style={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.titre}>ETABLISSEMENT</Text>
+      <Surface style={styles.card}>
+        <View
+          style={{flexDirection: 'row', alignItems: 'center', marginBottom: 6}}>
+          <Avatar.Icon size={32} icon="home-city" />
+          <Text
+            style={[
+              styles.titre,
+              {marginLeft: 8, color: theme.colors.primary},
+            ]}>
+            ETABLISSEMENT
+          </Text>
+        </View>
         <Text style={styles.text}> {etablissement(etablissementsID)}</Text>
-      </View>
-      <View style={styles.card}>
-        <Text style={styles.titre}>ANNEE SCOLAIRE</Text>
+      </Surface>
+      <Surface style={styles.card}>
+        <View
+          style={{flexDirection: 'row', alignItems: 'center', marginBottom: 6}}>
+          <Avatar.Icon size={32} icon="calendar" />
+          <Text
+            style={[
+              styles.titre,
+              {marginLeft: 8, color: theme.colors.primary},
+            ]}>
+            ANNEE SCOLAIRE
+          </Text>
+        </View>
         <Text style={styles.text}>{anneescolaire(anneescolairesID)}</Text>
-      </View>
-      <View style={styles.card}>
-        <Text style={styles.titre}>SOUSCRIPTEURS</Text>
+      </Surface>
+      <Surface style={styles.card}>
+        <View
+          style={{flexDirection: 'row', alignItems: 'center', marginBottom: 6}}>
+          <Avatar.Icon size={32} icon="account-group" />
+          <Text
+            style={[
+              styles.titre,
+              {marginLeft: 8, color: theme.colors.primary},
+            ]}>
+            SOUSCRIPTEURS
+          </Text>
+        </View>
         <Text style={styles.text}>CE : {cesouscrit}</Text>
         <Text style={styles.text}>Elèves : {elevesouscrit}</Text>
-      </View>
-      <View style={styles.card}>
-        <Text style={styles.titre}>MANUELS kit(s)</Text>
+        <PaperButton
+          style={{marginTop: 8}}
+          mode="outlined"
+          onPress={() => navigation.navigate('Souscriptions')}>
+          Voir souscriptions
+        </PaperButton>
+      </Surface>
+      <Surface style={styles.card}>
+        <View
+          style={{flexDirection: 'row', alignItems: 'center', marginBottom: 6}}>
+          <Avatar.Icon size={32} icon="book" />
+          <Text
+            style={[
+              styles.titre,
+              {marginLeft: 8, color: theme.colors.primary},
+            ]}>
+            MANUELS kit(s)
+          </Text>
+        </View>
         <Text style={styles.text}>6ème : {manueletab6 / 8}</Text>
         <Text style={styles.text}>5ème : {manueletab5 / 8}</Text>
         <Text style={styles.text}>Total : {manueletab / 8}</Text>
-      </View>
-      <View style={styles.card}>
-        <Text style={styles.titre}>PROPORTION DE REMISE</Text>
+        <PaperButton
+          style={{marginTop: 8}}
+          mode="outlined"
+          onPress={() => navigation.navigate('Liste des manuels')}>
+          Voir liste des manuels
+        </PaperButton>
+      </Surface>
+      <Surface style={styles.card}>
+        <View
+          style={{flexDirection: 'row', alignItems: 'center', marginBottom: 6}}>
+          <Avatar.Icon size={32} icon="chart-line" />
+          <Text
+            style={[
+              styles.titre,
+              {marginLeft: 8, color: theme.colors.primary},
+            ]}>
+            PROPORTION DE REMISE
+          </Text>
+        </View>
         <Text style={styles.text}>
-          6ème : {((manuelremiseleve6 / manueletab6) * 100).toFixed(2)} %
+          6ème :{' '}
+           {manueletab6 > 0 && manuelremiseleve6 != null
+            ? Math.min(100, (manuelremiseleve6 / manueletab6) * 100).toFixed(2) + ' %'
+            : 'Na'}
         </Text>
         <Text style={styles.text}>
-          5ème : {((manuelremiseleve5 / manueletab5) * 100).toFixed(2)} %
+  5ème :{' '}
+  {manueletab5 > 0 && manuelremiseleve5 != null
+    ? Math.min(100, (manuelremiseleve5 / manueletab5) * 100).toFixed(2) + ' %'
+    : 'Na'}
+</Text>
+        <Text style={styles.text}>
+          Total :{' '}
+          {manueletab > 0 && manuelremiseleve != null
+            ? Math.min(100, (manuelremiseleve / manueletab) * 100)
+                .toFixed(2)
+                .concat(' %')
+            : 'Na'}
+        </Text>
+        <PaperButton
+          style={{marginTop: 8}}
+          mode="outlined"
+          onPress={() => navigation.navigate('Remise')}>
+          Aller à Remise
+        </PaperButton>
+      </Surface>
+      {/* <Surface style={styles.card}>
+        <View
+          style={{flexDirection: 'row', alignItems: 'center', marginBottom: 6}}>
+          <Avatar.Icon size={32} icon="backup-restore" />
+          <Text
+            style={[
+              styles.titre,
+              {marginLeft: 8, color: theme.colors.primary},
+            ]}>
+            PROPORTION DE RETOUR
+          </Text>
+        </View>
+        <Text style={styles.text}>
+          6ème :{' '}
+           {manueletab6 > 0 && manuelretoureleve6 != null
+            ? Math.min(100, (manuelretoureleve6 / manuelremiseleve6) * 100).toFixed(2) + ' %'
+            : 'Na'}
         </Text>
         <Text style={styles.text}>
-          Total : {((manuelremiseleve / manueletab) * 100).toFixed(2)} %
-        </Text>
-      </View>
-      <View style={styles.card}>
-        <Text style={styles.titre}>PROPORTION DE RETOUR</Text>
-        <Text style={styles.text}>
-          6ème : {((manuelretoureleve6 / manuelremiseleve6) * 100).toFixed(2)} %
+          5ème :{' '}
+           {manueletab5 > 0 && manuelretoureleve5 != null
+            ? Math.min(100, (manuelretoureleve5 / manuelremiseleve5) * 100).toFixed(2) + ' %'
+            : 'Na'}
         </Text>
         <Text style={styles.text}>
-          5ème : {((manuelretoureleve5 / manuelremiseleve5) * 100).toFixed(2)} %
+          Total :{' '}
+          {manuelremiseleve > 0 && manuelretoureleve != null
+            ? Math.min(100, (manuelretoureleve / manuelremiseleve) * 100)
+                .toFixed(2)
+                .concat(' %')
+            : 'Na'}
         </Text>
-        <Text style={styles.text}>
-          Total : {((manuelretoureleve / manuelremiseleve) * 100).toFixed(2)} %
-        </Text>
-      </View>
+        <PaperButton
+          style={{marginTop: 8}}
+          mode="outlined"
+          onPress={() => navigation.navigate('Retour')}>
+          Aller à Retour
+        </PaperButton>
+      </Surface> */}
     </ScrollView>
   );
 }
@@ -187,5 +300,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   text: {fontSize: 16, marginVertical: 2},
-  titre: {fontSize: 18, marginVertical: 2, color: 'red'},
+  titre: {fontSize: 18, marginVertical: 2},
 });
+

@@ -1,13 +1,6 @@
 import React, {useEffect, useState} from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  TextInput,
-  Button,
-  Alert,
-} from 'react-native';
+import {View, Text, FlatList, StyleSheet, Alert} from 'react-native';
+import {TextInput as PaperTextInput, Button as PaperButton, List, Divider} from 'react-native-paper';
 import uuid from 'react-native-uuid';
 
 import {db} from '../../db/database';
@@ -49,13 +42,15 @@ const ElevesInscritsvalidation = () => {
       let params = [anneescolairesID, etablissementsID]; // Paramètres pour les filtres
 
       if (searchText) {
-        query += ` AND (e.nomeleve LIKE ? OR e.matriculeeleve LIKE ? OR e.prenomseleve LIKE ?)`;
-        params = [
-          ...params,
-          `%${searchText}%`,
-          `%${searchText}%`,
-          `%${searchText}%`,
-        ]; // Paramètres pour la recherche
+        query += ` AND (
+    UPPER(e.nomeleve) LIKE ?
+    OR UPPER(e.prenomseleve) LIKE ?
+    OR UPPER(e.matriculeeleve) LIKE ?
+    OR UPPER(COALESCE(e.nomeleve,'') || ' ' || COALESCE(e.prenomseleve,'')) LIKE ?
+  )`;
+
+        const like = `%${searchText.toUpperCase()}%`;
+        params.push(like, like, like, like);
       }
 
       tx.executeSql(
@@ -233,7 +228,7 @@ const ElevesInscritsvalidation = () => {
                     fetchElevesInscrits();
                     Alert.alert(
                       'Succès',
-                      "La validation de l'élève et l'attribution des manuels ont été effectuées.",
+                      "La validation de l'élève a été effectuée.",
                     );
                   },
                   (_, err) => {
@@ -260,33 +255,39 @@ const ElevesInscritsvalidation = () => {
 
   return (
     <View style={styles.container}>
-      <TextInput
+      <PaperTextInput
+        mode="outlined"
         style={styles.searchInput}
         placeholder="Rechercher par nom, matricule ou prénom"
-        placeholderTextColor="black"
         value={searchText}
         onChangeText={setSearchText}
+        left={<PaperTextInput.Icon icon="magnify" />}
       />
       <FlatList
         data={eleves}
         keyExtractor={item => item.id.toString()}
+        ItemSeparatorComponent={Divider}
         renderItem={({item}) => (
-          <View style={styles.card}>
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Élève :</Text> {item.eleve}
-            </Text>
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Classe :</Text> {item.classe}
-            </Text>
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Inscrit :</Text>{' '}
-              {item.presouscrit ? 'Oui' : 'Non'}
-            </Text>
-            <Button
-              title="Valider"
-              onPress={() => confirmValidation(item.id)}
-            />
-          </View>
+          <List.Item
+            title={item.eleve}
+            titleNumberOfLines={3}
+            titleEllipsizeMode="tail"
+            description={() => (
+              <View>
+                <Text style={styles.text}>Classe: {item.classe}</Text>
+                {!!item.penalite && (
+                  <Text style={styles.penalite}>Pénalité: {item.penalite} FCFA</Text>
+                )}
+                <Text style={styles.text}>Inscrit: {item.presouscrit ? 'Oui' : 'Non'}</Text>
+              </View>
+            )}
+            left={props => <List.Icon {...props} icon="account" />}
+            right={props => (
+              <View style={{justifyContent: 'center'}}>
+                <PaperButton mode="contained" onPress={() => confirmValidation(item.id)}>Valider</PaperButton>
+              </View>
+            )}
+          />
         )}
       />
     </View>
@@ -322,12 +323,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   searchInput: {
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
     marginBottom: 10,
-    paddingHorizontal: 8,
-    borderRadius: 5,
   },
 });
 

@@ -140,13 +140,13 @@ const CustomPicker = ({
   onValueChange,
   displayKey = 'label',
   valueKey = 'value',
-
+  placeholder = 'Sélectionner un établissement',
   isDisabled = false,
 }) => {
   const [modalVisible, setModalVisible] = useState(false);
 
   const selectedItem = items?.find(item => item[valueKey] === selectedId);
-  const selectedLabel = selectedItem?.[displayKey] ?? 'Sélectionner une option';
+  const selectedLabel = selectedItem?.[displayKey] ?? placeholder;
 
   const handleItemPress = item => {
     if (!isDisabled) {

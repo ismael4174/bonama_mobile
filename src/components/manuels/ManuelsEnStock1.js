@@ -1,15 +1,9 @@
 import React, {useState, useEffect} from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Button,
-  Modal,
-  Alert,
-} from 'react-native';
+import {View, Text, FlatList, TouchableOpacity, StyleSheet, Button, Modal, Alert} from 'react-native';
+import {TextInput as PaperTextInput, List, Divider, Button as PaperButton} from 'react-native-paper';
+import EmptyState from '../ui/EmptyState';
+import LoadingState from '../ui/LoadingState';
+import ErrorState from '../ui/ErrorState';
 import SQLite from 'react-native-sqlite-storage';
 import axios from 'axios';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -39,6 +33,12 @@ const StockManuels = () => {
   const [etatmanuel, setEtatmanuel] = useState('');
   const [statuts, setStatuts] = useState([]);
   const [etatmanuels, setEtatmanuels] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [stockParMatiere, setStockParMatiere] = useState([]);
+  const [stockParNiveau, setStockParNiveau] = useState([]);
+  const [totalStockDispo, setTotalStockDispo] = useState(0);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const etablissementsID = parseInt(useEtablissementId(), 10);
   const drenasID = parseInt(useDrenaId(), 10);
   useEffect(() => {
@@ -107,15 +107,73 @@ const StockManuels = () => {
   }, []);
 
   const fetchData = () => {
-    db.transaction(tx => {
-      tx.executeSql(
-        'SELECT * FROM stockmanuels JOIN etablissements on etablissements.id = stockmanuels.etablissements_id WHERE etablissements.drenas_id=?',
-        [drenasID],
-        (_, {rows}) => {
-          setData(rows.raw());
-        },
-      );
-    });
+    setError('');
+    setLoading(true);
+    db.transaction(
+      tx => {
+        tx.executeSql(
+          'SELECT * FROM stockmanuels JOIN etablissements on etablissements.id = stockmanuels.etablissements_id WHERE etablissements.drenas_id=?',
+          [drenasID],
+          (_, {rows}) => {
+            setData(rows.raw());
+            setLoading(false);
+          },
+          (_, err) => {
+            setError('Impossible de charger les manuels en stock.');
+            setLoading(false);
+            return false;
+          },
+        );
+
+        tx.executeSql(
+          `SELECT m.id AS manuels_id, m.titre AS titre, COUNT(sm.id) AS quantite
+           FROM stockmanuels sm
+           JOIN manuels m ON m.id = sm.manuels_id
+           JOIN etablissements e ON e.id = sm.etablissements_id
+           WHERE e.drenas_id = ? AND sm.statutmanules_id = 1
+           GROUP BY m.id, m.titre
+           ORDER BY m.titre`,
+          [drenasID],
+          (_, {rows}) => {
+            setStockParMatiere(rows.raw());
+          },
+        );
+
+        tx.executeSql(
+          `SELECT c.id AS classes_id, c.libelleclasse AS libelleclasse, COUNT(sm.id) AS quantite
+           FROM stockmanuels sm
+           JOIN manuels m ON m.id = sm.manuels_id
+           JOIN classes c ON c.id = m.classes_id
+           JOIN etablissements e ON e.id = sm.etablissements_id
+           WHERE e.drenas_id = ? AND sm.statutmanules_id = 1
+           GROUP BY c.id, c.libelleclasse
+           ORDER BY c.libelleclasse`,
+          [drenasID],
+          (_, {rows}) => {
+            setStockParNiveau(rows.raw());
+          },
+        );
+
+        tx.executeSql(
+          `SELECT COUNT(sm.id) AS total
+           FROM stockmanuels sm
+           JOIN etablissements e ON e.id = sm.etablissements_id
+           WHERE e.drenas_id = ? AND sm.statutmanules_id = 1`,
+          [drenasID],
+          (_, {rows}) => {
+            if (rows.length > 0) {
+              setTotalStockDispo(rows.item(0).total || 0);
+            } else {
+              setTotalStockDispo(0);
+            }
+          },
+        );
+      },
+      err => {
+        setError('Erreur de transaction lors du chargement.');
+        setLoading(false);
+      },
+    );
   };
 
   const addOrUpdateItem = () => {
@@ -165,25 +223,75 @@ const StockManuels = () => {
 
   return (
     <View style={styles.container}>
-      <TextInput
+      {loading ? (
+        <LoadingState label="Chargement des manuels en stock..." />
+      ) : error ? (
+        <ErrorState subtitle={error} onAction={fetchData} />
+      ) : (
+        <>
+      <View style={styles.summaryContainer}>
+        <TouchableOpacity
+          onPress={() => setSummaryOpen(prev => !prev)}
+          style={styles.summaryHeader}
+          accessibilityRole="button"
+          accessibilityLabel="Afficher ou masquer le stock global de manuels"
+        >
+          <Text style={styles.summaryTitle}>Stock de manuels disponibles (DRENA)</Text>
+          <Icon
+            name={summaryOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+            size={20}
+            color="#333"
+          />
+        </TouchableOpacity>
+
+        {summaryOpen && (
+          <View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Cumul disponible</Text>
+              <Text style={styles.summaryValue}>{totalStockDispo}</Text>
+            </View>
+
+            <Text style={styles.summarySubtitle}>Par matière</Text>
+            {stockParMatiere.map(item => (
+              <View
+                key={`mat-${item.manuels_id}`}
+                style={styles.summaryRow}
+              >
+                <Text style={styles.summaryLabel}>{item.titre}</Text>
+                <Text style={styles.summaryValue}>{item.quantite}</Text>
+              </View>
+            ))}
+
+            <Text style={styles.summarySubtitle}>Par niveau</Text>
+            {stockParNiveau.map(item => (
+              <View
+                key={`niv-${item.classes_id}`}
+                style={styles.summaryRow}
+              >
+                <Text style={styles.summaryLabel}>{item.libelleclasse}</Text>
+                <Text style={styles.summaryValue}>{item.quantite}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+
+      <PaperTextInput
+        mode="outlined"
         placeholder="Rechercher..."
         value={search}
         onChangeText={setSearch}
-        placeholderTextColor="black"
+        left={<PaperTextInput.Icon icon="magnify" />}
         style={styles.searchInput}
-      />
-      <Button
-        title="Ajouter"
-        onPress={() => {
-          setCurrentItem({});
-          setModalVisible(true);
-        }}
-        color="#007bff"
+        accessibilityLabel="Recherche"
+        accessibilityHint="Filtrer la liste des manuels"
       />
       <FlatList
-        data={data.filter(item => item.referenceexemplaire.includes(search))}
-        keyExtractor={item => `${item.id}-${item.referenceexemplaire}`}
-        renderItem={({item}) => {
+      data={data.filter(item => item.referenceexemplaire.includes(search))}
+      keyExtractor={(item, index) => `${item.id}-${index}`}
+      ItemSeparatorComponent={Divider}
+      ListEmptyComponent={<EmptyState title="Aucun manuel en stock" subtitle="Essayez d’ajuster la recherche" />}
+      renderItem={({item}) => {
           // Trouver le libellé du manuel correspondant
           const monetablissement = etablissements.find(
             e => e.id === item.etablissements_id,
@@ -210,26 +318,20 @@ const StockManuels = () => {
             : 'Inconnu';
 
           return (
-            <View style={styles.card}>
-              {/*<Text style={styles.title}>Etablissement:{nometablissement}</Text>*/}
-              <Text style={styles.title}>Manuel:{libelleManuel}</Text>
-              <Text style={styles.title}>Ref:{item.referenceexemplaire}</Text>
-              <Text style={styles.title}>Statut:{libellestatut}</Text>
-              <Text style={styles.title}>Etat:{libelleetatmanuel}</Text>
-              {/*<View style={styles.actions}>
-                <TouchableOpacity
-                  onPress={() => {
-                    setCurrentItem(item);
-                    setModalVisible(true);
-                  }}>
-                  <Text style={{fontSize: 20}}>✏️</Text>
-                </TouchableOpacity>                
-                <TouchableOpacity onPress={() => deleteItem(item.id)}>
-                  <Text style={{fontSize: 20}}>🗑️</Text>
-                </TouchableOpacity>
-                
-              </View>*/}
-            </View>
+            <List.Item
+              title={`Manuel: ${libelleManuel}`}
+              titleNumberOfLines={3}
+              titleEllipsizeMode="tail"
+              description={() => (
+                <View>
+                  <Text style={styles.desc}>Ref: {item.referenceexemplaire}</Text>
+                  <Text style={styles.desc}>Statut: {libellestatut}</Text>
+                  <Text style={styles.desc}>État: {libelleetatmanuel}</Text>
+                </View>
+              )}
+              left={props => <List.Icon {...props} icon="book" />}
+              accessibilityLabel={`Manuel ${libelleManuel}, référence ${item.referenceexemplaire}, statut ${libellestatut}, état ${libelleetatmanuel}`}
+            />
           );
         }}
       />
@@ -284,13 +386,14 @@ const StockManuels = () => {
             style={styles.input}
           />*/}
           <Text>Reference:</Text>
-          <TextInput
+          <PaperTextInput
+            mode="outlined"
             placeholder="Référence"
             value={currentItem?.referenceexemplaire || ''}
             onChangeText={text =>
               setCurrentItem({...currentItem, referenceexemplaire: text})
             }
-            style={styles.input}
+            style={{marginBottom: 8}}
           />
           <Text>Statut:</Text>
           <CustomPicker
@@ -340,11 +443,13 @@ const StockManuels = () => {
             style={styles.input}
           />*/}
           <View>
-            <Button title="Enregistrer" onPress={addOrUpdateItem} />
-            <Button title="Annuler" onPress={() => setModalVisible(false)} />
+            <PaperButton mode="contained" onPress={addOrUpdateItem}>Enregistrer</PaperButton>
+            <PaperButton style={{marginTop: 8}} onPress={() => setModalVisible(false)}>Annuler</PaperButton>
           </View>
         </View>
       </Modal>
+      </>
+      )}
     </View>
   );
 };
@@ -352,15 +457,60 @@ const StockManuels = () => {
 const styles = StyleSheet.create({
   container: {padding: 10},
   searchInput: {
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
     marginBottom: 10,
-    paddingHorizontal: 8,
-    color: 'black',
+  },
+  summaryContainer: {
+    marginBottom: 12,
+    padding: 12,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  summarySubtitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  summaryText: {
+    fontSize: 14,
+    marginTop: 2,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: 2,
+  },
+  summaryLabel: {
+    fontSize: 14,
+    color: '#555',
+    flex: 1,
+    marginRight: 8,
+  },
+  summaryValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#007AFF',
   },
   card: {padding: 15, margin: 10, backgroundColor: '#eee', borderRadius: 10},
   title: {fontSize: 18, fontWeight: 'bold'},
+  desc: {fontSize: 14, marginTop: 2},
   actions: {flexDirection: 'row', justifyContent: 'space-between'},
   modalContainer: {
     flex: 1,

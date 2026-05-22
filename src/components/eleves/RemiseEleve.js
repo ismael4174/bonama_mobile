@@ -1,14 +1,6 @@
 import React, {useEffect, useState, useCallback} from 'react';
-import {
-  View,
-  Image,
-  Text,
-  FlatList,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  Modal,
-} from 'react-native';
+import {View, Image, Text, FlatList, StyleSheet, TouchableOpacity, Modal} from 'react-native';
+import {TextInput as PaperTextInput, List, Divider, Button as PaperButton} from 'react-native-paper';
 import RNHTMLtoPDF from 'react-native-html-to-pdf';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
@@ -17,6 +9,7 @@ import {db} from '../../db/database';
 import useAnneescolairesID from '../../parametres/anneescolaire.js';
 import useEtablissementId from '../../parametres/etablissement.js';
 import RemiseEleveDetails from './RemiseEleveDetails';
+import {useFocusEffect} from '@react-navigation/native';
 
 const ElevesInscrits = ({navigation}) => {
   const [eleves, setEleves] = useState([]);
@@ -251,89 +244,6 @@ const ElevesInscrits = ({navigation}) => {
       );
     });
   }, []);
-  /*const fetchElevesInscrits = useCallback(() => {
-    db.transaction(tx => {
-      let query = `
-            SELECT
-                ei.id,
-                ei.reference,
-                a.libelleanneescolaire AS annee_scolaire,
-                e.matriculeeleve || ' - ' || e.nomeleve || ' ' || e.prenomseleve AS eleve,
-                et.nometablissement AS etablissement,
-                c.libelleclasse AS classe,
-                ei.penalite,
-                ei.presouscrit,
-                ei.souscrit,
-                ei.remisefinalise,
-                m.titre AS manuel_name,
-                me.nombremanuel
-            FROM elevesinscrits ei
-            JOIN anneescolaires a ON ei.anneescolaires_id = a.id
-            JOIN eleves e ON ei.eleves_id = e.id
-            JOIN etablissements et ON ei.etablissements_id = et.id
-            JOIN classes c ON ei.classes_id = c.id
-            LEFT JOIN manuelseleves me ON ei.id = me.elevesinscrits_id
-            LEFT JOIN manuels m ON me.manuels_id = m.id
-            WHERE ei.presouscrit = 1 AND ei.anneescolaires_id = ? AND ei.etablissements_id = ?
-        `;
-
-      let params = [anneescolairesID, etablissementsID];
-
-      if (searchText) {
-        query += ` AND (e.nomeleve LIKE ? OR e.matriculeeleve LIKE ? OR e.prenomseleve LIKE ?)`;
-        params = [
-          ...params,
-          `%${searchText}%`,
-          `%${searchText}%`,
-          `%${searchText}%`,
-        ];
-      }
-
-      tx.executeSql(
-        query,
-        params,
-        (_, result) => {
-          let rows = result.rows.raw();
-          let elevesMap = new Map();
-
-          rows.forEach(row => {
-            if (!elevesMap.has(row.id)) {
-              elevesMap.set(row.id, {
-                id: row.id,
-                reference: row.reference,
-                annee_scolaire: row.annee_scolaire,
-                eleve: row.eleve,
-                etablissement: row.etablissement,
-                classe: row.classe,
-                penalite: row.penalite,
-                presouscrit: row.presouscrit,
-                souscrit: row.souscrit,
-                remisefinalise: row.remisefinalise,
-                details: [],
-              });
-            }
-
-            if (row.manuel_name && row.etatmanuelsremiseeleve_id) {
-              elevesMap.get(row.id).details.push({
-                manuel_name: row.manuel_name,
-                nombremanuel: row.nombremanuel,
-              });
-            }
-          });
-
-          setEleves(Array.from(elevesMap.values()));
-          console.log('eleves:', Array.from(elevesMap.values()));
-        },
-        (_, error) => {
-          console.error(
-            'Erreur lors de la récupération des élèves inscrits :',
-            error,
-          );
-        },
-      );
-    });
-  }, [searchText, anneescolairesID, etablissementsID]);
-  */
   const fetchElevesInscrits = useCallback(() => {
     db.transaction(tx => {
       let query = `
@@ -358,19 +268,21 @@ const ElevesInscrits = ({navigation}) => {
             JOIN etablissements et ON ei.etablissements_id = et.id
             JOIN classes c ON ei.classes_id = c.id
             JOIN drenas d ON et.drenas_id = d.id
-            WHERE ei.presouscrit = 1 AND ei.anneescolaires_id = ? AND ei.etablissements_id = ?
+            WHERE ei.souscrit = 1 AND ei.anneescolaires_id = ? AND ei.etablissements_id = ?
         `;
 
       let params = [anneescolairesID, etablissementsID];
 
       if (searchText) {
-        query += ` AND (e.nomeleve LIKE ? OR e.matriculeeleve LIKE ? OR e.prenomseleve LIKE ?)`;
-        params = [
-          ...params,
-          `%${searchText}%`,
-          `%${searchText}%`,
-          `%${searchText}%`,
-        ];
+        query += ` AND (
+    UPPER(e.nomeleve) LIKE ?
+    OR UPPER(e.prenomseleve) LIKE ?
+    OR UPPER(e.matriculeeleve) LIKE ?
+    OR UPPER(COALESCE(e.nomeleve,'') || ' ' || COALESCE(e.prenomseleve,'')) LIKE ?
+  )`;
+
+        const like = `%${searchText.toUpperCase()}%`;
+        params.push(like, like, like, like);
       }
 
       tx.executeSql(
@@ -421,6 +333,12 @@ const ElevesInscrits = ({navigation}) => {
     fetchElevesInscrits();
   }, [fetchElevesInscrits]);
 
+  useFocusEffect(
+    useCallback(() => {
+      fetchElevesInscrits();
+    }, [fetchElevesInscrits]),
+  );
+
   const handleFinaliserRemise = useCallback(item => {
     setSelectedEleve(item);
     setRemiseEleveDetailsEditable(true);
@@ -445,93 +363,54 @@ const ElevesInscrits = ({navigation}) => {
   }, []);
   return (
     <View style={styles.container}>
-      <TextInput
+      <PaperTextInput
+        mode="outlined"
         style={styles.searchInput}
         placeholder="Rechercher par nom, matricule ou prénom"
         value={searchText}
         onChangeText={setSearchText}
-        placeholderTextColor="black"
+        left={<PaperTextInput.Icon icon="magnify" />}
       />
       <FlatList
         data={eleves}
         keyExtractor={item => item.id.toString()}
+        ItemSeparatorComponent={Divider}
         renderItem={({item}) => (
-          <View style={styles.card}>
-            {/* <Text style={styles.text}>
-              <Text style={styles.bold}>ElevesInscritId :</Text> {item.id}
-            </Text>*/}
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Élève :</Text> {item.eleve}
-            </Text>
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Classe :</Text> {item.classe}
-            </Text>
-            {/* <Text style={styles.text}>
-              <Text style={styles.bold}>Établissement :</Text>{' '}
-              {item.etablissement}
-            </Text>
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Année :</Text> {item.annee_scolaire}
-            </Text>
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Pénalité :</Text> {item.penalite} FCFA
-            </Text>
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Presouscrit :</Text>{' '}
-              {item.presouscrit ? 'Oui' : 'Non'}
-            </Text>*/}
-            <View style={styles.actions}>
-              {item.remisefinalise === 1 ? (
-                <>
-                  <TouchableOpacity style={styles.redButton}>
-                    <Text style={styles.whiteText}>Déjà finalisée</Text>
-                  </TouchableOpacity>
-                  {/* <TouchableOpacity
-                    onPress={() => handleTelechargerPDF(item)}
-                    style={styles.blueButton}>
-                    <Text style={styles.whiteText}>Reçu</Text>
-                  </TouchableOpacity> */}
-                  {/* <TouchableOpacity
-                    onPress={() => {
-                      //handleEditerRemise(item);
+          <List.Item
+            title={item.eleve}
+            titleNumberOfLines={3}
+            titleEllipsizeMode="tail"
+            description={() => (
+              <View>
+                <Text style={styles.text}>Classe: {item.classe}</Text>
+              </View>
+            )}
+            left={props => <List.Icon {...props} icon="account" />}
+            right={props => (
+              <View style={{justifyContent: 'center'}}>
+                {item.remisefinalise === 1 ? (
+                  <PaperButton
+                                      mode="contained"
+                                      disabled
+                                      compact
+                                      style={{paddingHorizontal: 4, paddingVertical: 0, minWidth: 10}}
+                                      labelStyle={{fontSize: 10}}>
+                                      Déjà finalisée
+                                    </PaperButton>
+                ) : (
+                  <PaperButton
+                    mode="contained"
+                    onPress={() =>
                       navigation.navigate('RemiseEleveDetails', {
                         eleveInscritId: item.id,
-                      }); // 123 est l'ID de la commande
-                    }}
-                    // onPress={() => handleEditerRemise(item)}
-                    style={styles.blueButton}>
-                    <Text style={styles.whiteText}>Editer</Text>
-                  </TouchableOpacity>*/}
-                </>
-              ) : (
-                <>
-                  {/*<TouchableOpacity
-                    onPress={() => {
-                      handleFinaliserRemise(item);
-                      navigation.navigate('RemiseEleveDetails', {
-                        eleveInscritId: item.id,
-                      });
-                    }}
-                    style={styles.blueButton}>
-                    <Text style={styles.whiteText}>Finaliser</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.blueButton}>
-                    <Text style={styles.whiteText}>Non disponible</Text>
-                  </TouchableOpacity>*/}
-                  <TouchableOpacity
-                    onPress={() => {
-                      //  handleEditerRemise(item);
-                      navigation.navigate('RemiseEleveDetails', {
-                        eleveInscritId: item.id,
-                      });
-                    }}
-                    style={styles.blueButton}>
-                    <Text style={styles.whiteText}>Editer</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          </View>
+                      })
+                    }>
+                    Editer
+                  </PaperButton>
+                )}
+              </View>
+            )}
+          />
         )}
       />
       <Modal
@@ -560,15 +439,7 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: '#f5f5f5',
   },
-  searchInput: {
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
-    marginBottom: 10,
-    paddingHorizontal: 8,
-    borderRadius: 5,
-    color: 'black',
-  },
+  
   card: {
     backgroundColor: '#fff',
     padding: 15,

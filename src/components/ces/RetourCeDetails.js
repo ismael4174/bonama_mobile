@@ -1,16 +1,6 @@
 import React, {useState, useEffect} from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Modal,
-  Switch,
-  Button,
-  Alert,
-} from 'react-native';
+import {View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, Modal, Switch, Alert} from 'react-native';
+import {TextInput as PaperTextInput, Button as PaperButton} from 'react-native-paper';
 import uuid from 'react-native-uuid';
 
 import SQLite from 'react-native-sqlite-storage';
@@ -43,7 +33,7 @@ const ManuelsUES = ({navigation, route}) => {
   const [monManuel, setMonManuel] = useState([]);
   const {commandeId} = route.params || {}; // Récupération de commandeId depuis les paramètres
   // Variable d'état pour contrôler si les champs sont verrouillés
-  const [isLocked, setIsLocked] = useState(true); // Initialisez à 'true' pour qu'ils soient verrouillés par défaut
+  const [isLocked, setIsLocked] = useState(true); // verrouillé par défaut, sera mis à jour selon retouruefinalise
   const handleFinaliserRetour = () => {
     db.transaction(tx => {
       // Compter le nombre total de manuels pour cette commande
@@ -62,49 +52,65 @@ const ManuelsUES = ({navigation, route}) => {
                 results.rows.item(0).nbremanuelsrenseignes;
 
               if (nbreManuel === nbremanuelsrenseignes) {
-                // Mettre à jour la table commandesues
+                // Rendre disponibles uniquement les exemplaires dont l'état au retour n'est pas PERDU (id=6)
                 tx.executeSql(
-                  'UPDATE commandesues SET retouruefinalise = 1 WHERE id = ?',
+                  `UPDATE stockmanuels
+                   SET statutmanules_id = 1
+                   WHERE id IN (
+                     SELECT DISTINCT exemplairemanuels_id
+                     FROM manuelsues
+                     WHERE commandesues_id = ?
+                       AND exemplairemanuels_id IS NOT NULL
+                       AND etatmanuelsauretour_id IS NOT NULL
+                       AND etatmanuelsauretour_id != 6
+                   )`,
                   [commandeId],
                   () => {
-                    // Insertion dans sync_log avec uuid et source
-                    const syncData = {
-                      retouruefinalise: 1,
-                    };
+                    // Mettre à jour la table commandesues
                     tx.executeSql(
-                      'INSERT INTO sync_log (uuid, table_name, record_id, action, data, source) VALUES (?, ?, ?, ?, ?, ?)',
-                      [
-                        uuid.v4(),
-                        'commandesues',
-                        commandeId,
-                        'update',
-                        JSON.stringify(syncData),
-                        'local',
-                      ],
+                      'UPDATE commandesues SET retouruefinalise = 1 WHERE id = ?',
+                      [commandeId],
                       () => {
-                        Alert.alert('Succès', 'Le retour a été finalisé.');
-                        navigation.goBack();
+                        // Insertion dans sync_log avec uuid et source
+                        const syncData = {
+                          retouruefinalise: 1,
+                        };
+                        tx.executeSql(
+                          'INSERT INTO sync_log (uuid, table_name, record_id, action, data, source) VALUES (?, ?, ?, ?, ?, ?)',
+                          [
+                            uuid.v4(),
+                            'commandesues',
+                            commandeId,
+                            'update',
+                            JSON.stringify(syncData),
+                            'local',
+                          ],
+                          () => {
+                            Alert.alert('Succès', 'Le retour a été finalisé.');
+                            navigation.goBack();
+                          },
+                          (_, error) => {
+                            console.error(
+                              "Erreur lors de l'insertion dans sync_log :",
+                              error,
+                            );
+                            Alert.alert(
+                              'Erreur',
+                              'Une erreur est survenue lors de l’insertion dans les logs.',
+                            );
+                          },
+                        );
                       },
                       (_, error) => {
                         console.error(
-                          "Erreur lors de l'insertion dans sync_log :",
+                          'Erreur lors de la mise à jour du retour :',
                           error,
                         );
                         Alert.alert(
                           'Erreur',
-                          'Une erreur est survenue lors de l’insertion dans les logs.',
+                          'Une erreur est survenue lors de la finalisation.',
                         );
                       },
-                    );
-                  },
-                  (_, error) => {
-                    console.error(
-                      'Erreur lors de la mise à jour du retour :',
-                      error,
-                    );
-                    Alert.alert(
-                      'Erreur',
-                      'Une erreur est survenue lors de la finalisation.',
                     );
                   },
                 );
@@ -228,7 +234,7 @@ const ManuelsUES = ({navigation, route}) => {
   const fetchData = () => {
     db.transaction(tx => {
       tx.executeSql(
-        'SELECT id, referenceexemplaire FROM stockmanuels;',
+        'SELECT id, referenceexemplaire, manuels_id, etatmanuels_id FROM stockmanuels;',
         [],
         (_, results) => {
           setStockmanuels(results.rows.raw());
@@ -236,10 +242,18 @@ const ManuelsUES = ({navigation, route}) => {
         error => console.log('Erreur lors du chargement des stocks', error),
       );
       tx.executeSql(
-        'SELECT commandesues.id,ues.denominationue FROM commandesues JOIN ues ON ues.id = commandesues.ues_id;',
+        'SELECT commandesues.id, commandesues.retouruefinalise, ues.denominationue FROM commandesues JOIN ues ON ues.id = commandesues.ues_id;',
         [],
         (_, results) => {
-          setUes(results.rows.raw());
+          const rows = results.rows.raw();
+          setUes(rows.map(r => ({id: r.id, denominationue: r.denominationue})));
+
+          if (commandeId) {
+            const currentCommande = rows.find(r => r.id === commandeId);
+            if (currentCommande) {
+              setIsLocked(currentCommande.retouruefinalise === 1);
+            }
+          }
         },
         error => console.log('Erreur lors du chargement des CE', error),
       );
@@ -290,20 +304,19 @@ const ManuelsUES = ({navigation, route}) => {
   const handleSave = () => {
     db.transaction(tx => {
       if (currentManuel?.id) {
-        // Cas de mise à jour
+        // Cas de mise à jour : on ne modifie plus l'état à la remise ici
         tx.executeSql(
-          'UPDATE manuelsues SET commandesues_id=?, manuels_id=?, exemplairemanuels_id=?, etatmanuelsalaremise_id=?, etatmanuelsauretour_id=?, rendu=? WHERE id=?',
+          'UPDATE manuelsues SET commandesues_id=?, manuels_id=?, exemplairemanuels_id=?, etatmanuelsauretour_id=?, rendu=? WHERE id=?',
           [
             currentManuel.commandesues_id,
             currentManuel.manuels_id,
             currentManuel.exemplairemanuels_id,
-            currentManuel.etatmanuelsalaremise_id,
             currentManuel.etatmanuelsauretour_id,
             currentManuel.rendu,
             currentManuel.id,
           ],
           () => {
-            fetchManuels();
+            fetchManuels(commandeId);
             tx.executeSql(
               'INSERT INTO sync_log (uuid, table_name, record_id, action, data, source) VALUES (?, ?, ?, ?, ?, ?)',
               [
@@ -318,19 +331,18 @@ const ManuelsUES = ({navigation, route}) => {
           },
         );
       } else {
-        // Cas d'insertion
+        // Cas d'insertion : l'état à la remise provient de la création initiale/stock, pas de cet écran
         tx.executeSql(
-          'INSERT INTO manuelsues (commandesues_id, manuels_id, exemplairemanuels_id, etatmanuelsalaremise_id, etatmanuelsauretour_id, rendu) VALUES (?, ?, ?, ?, ?, ?)',
+          'INSERT INTO manuelsues (commandesues_id, manuels_id, exemplairemanuels_id, etatmanuelsauretour_id, rendu) VALUES (?, ?, ?, ?, ?)',
           [
             currentManuel.commandesues_id,
             currentManuel.manuels_id,
             currentManuel.exemplairemanuels_id,
-            currentManuel.etatmanuelsalaremise_id,
             currentManuel.etatmanuelsauretour_id,
             currentManuel.rendu,
           ],
           (_, result) => {
-            fetchManuels();
+            fetchManuels(commandeId);
             tx.executeSql(
               'INSERT INTO sync_log (uuid, table_name, record_id, action, data, source) VALUES (?, ?, ?, ?, ?, ?)',
               [
@@ -406,7 +418,9 @@ const ManuelsUES = ({navigation, route}) => {
 
   const handleDelete = id => {
     db.transaction(tx => {
-      tx.executeSql('DELETE FROM manuelsues WHERE id = ?', [id], fetchManuels);
+      tx.executeSql('DELETE FROM manuelsues WHERE id = ?', [id], () =>
+        fetchManuels(commandeId),
+      );
       tx.executeSql(
         //'INSERT INTO sync_log (table_name, record_id, action) VALUES (?, ?, ?)',
         //['manuelsues', id, 'delete'],
@@ -418,20 +432,18 @@ const ManuelsUES = ({navigation, route}) => {
 
   return (
     <View style={styles.container}>
-      <Button
-        title="Retour"
-        onPress={() => {
-          navigation.goBack();
-        }}
-      />
-      <Button title="Finaliser ce retour" onPress={handleFinaliserRetour} />
+      <PaperButton onPress={() => navigation.goBack()}>Précédent</PaperButton>
+      <PaperButton mode="contained" onPress={handleFinaliserRetour} style={{marginTop: 8}}>
+        Finaliser ce retour
+      </PaperButton>
 
-      <TextInput
+      <PaperTextInput
+        mode="outlined"
         placeholder="Rechercher..."
         value={search}
         onChangeText={setSearch}
-        placeholderTextColor="black"
         style={styles.searchInput}
+        left={<PaperTextInput.Icon icon="magnify" />}
       />
 
       <FlatList
@@ -453,9 +465,9 @@ const ManuelsUES = ({navigation, route}) => {
             ? exemplaire.referenceexemplaire
             : 'Inconnu';
 
-          const etatmanuelremise = etatmanuels?.find(
-            s => s.id === item.etatmanuelsalaremise_id,
-          );
+          const etatmanuelremise = exemplaire
+            ? etatmanuels?.find(s => s.id === exemplaire.etatmanuels_id)
+            : null;
           const monetatremise = etatmanuelremise
             ? etatmanuelremise.etatmanuel
             : 'Inconnu';
@@ -500,18 +512,20 @@ const ManuelsUES = ({navigation, route}) => {
                 État à la remise: {monetatremise}
               </Text>
               <Text style={styles.title}>État au retour: {monetatretour}</Text>
-              <Text style={styles.title}>
+              {/* <Text style={styles.title}>
                 Rendu: {item.rendu ? 'Oui' : 'Non'}
-              </Text>
+              </Text> */}
 
               <View style={styles.actions}>
-                <TouchableOpacity
-                  onPress={() => {
-                    setCurrentManuel(item);
-                    setModalVisible(true);
-                  }}>
-                  <Text style={{fontSize: 20}}>✏️</Text>
-                </TouchableOpacity>
+                {item.etatmanuelsauretour_id ? null : (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setCurrentManuel(item);
+                      setModalVisible(true);
+                    }}>
+                    <Text style={{fontSize: 20}}>✏️</Text>
+                  </TouchableOpacity>
+                )}
                 {/*<TouchableOpacity onPress={() => handleDelete(item.id)}>
                   <Text style={{fontSize: 20}}>🗑️</Text>
                 </TouchableOpacity>*/}
@@ -545,7 +559,7 @@ const ManuelsUES = ({navigation, route}) => {
               }
               displayKey="label"
               valueKey="value"
-              isDisabled={isLocked}
+              isDisabled={true}
             />
             <Text>Manuel</Text>
             <CustomPicker
@@ -560,15 +574,16 @@ const ManuelsUES = ({navigation, route}) => {
               }
               displayKey="label"
               valueKey="value"
-              isDisabled={isLocked}
+              isDisabled={true}
             />
             <Text>Exemplaire</Text>
             <CustomPicker
-              label="Exemplaire"
+              label="Référence"
               items={stockmanuels?.map(ex => ({
                 label: ex.referenceexemplaire,
                 value: ex.id,
               }))}
+              placeholder="Sélectionner une référence"
               selectedId={currentManuel?.exemplairemanuels_id}
               onValueChange={value =>
                 setCurrentManuel({
@@ -578,26 +593,9 @@ const ManuelsUES = ({navigation, route}) => {
               }
               displayKey="label"
               valueKey="value"
-              isDisabled={isLocked}
+              isDisabled={true}
             />
-            <Text>Etat à la remise</Text>
-            <CustomPicker
-              label="État Remise"
-              items={etatmanuels?.map(etat => ({
-                label: etat.etatmanuel,
-                value: etat.id,
-              }))}
-              selectedId={currentManuel?.etatmanuelsalaremise_id}
-              onValueChange={value =>
-                setCurrentManuel({
-                  ...currentManuel,
-                  etatmanuelsalaremise_id: value,
-                })
-              }
-              displayKey="label"
-              valueKey="value"
-              isDisabled={isLocked}
-            />
+            {/* L'état à la remise provient désormais de stockmanuels et n'est plus modifiable ici */}
             <Text>Etat au retour</Text>
             <CustomPicker
               label="État Retour"
@@ -607,6 +605,7 @@ const ManuelsUES = ({navigation, route}) => {
                   label: etat.etatmanuel,
                   value: etat.id,
                 }))}
+              placeholder="Sélectionner un état"
               selectedId={currentManuel?.etatmanuelsauretour_id}
               onValueChange={value =>
                 setCurrentManuel({
@@ -616,53 +615,10 @@ const ManuelsUES = ({navigation, route}) => {
               }
               displayKey="label"
               valueKey="value"
+              isDisabled={isLocked}
             />
 
-            {/*
-             <Text>Manuel ID:</Text>
-            <TextInput
-              value={currentManuel?.manuels_id?.toString() || ''}
-              onChangeText={text =>
-                setCurrentManuel({...currentManuel, manuels_id: text})
-              }
-              style={styles.input}
-            />
-
-            <Text>Exemplaire ID:</Text>
-            <TextInput
-              value={currentManuel?.exemplairemanuels_id?.toString() || ''}
-              onChangeText={text =>
-                setCurrentManuel({...currentManuel, exemplairemanuels_id: text})
-              }
-              style={styles.input}
-            />
-
-            <Text>État à la remise:</Text>
-            <TextInput
-              value={currentManuel?.etatmanuelsalaremise_id?.toString() || ''}
-              onChangeText={text =>
-                setCurrentManuel({
-                  ...currentManuel,
-                  etatmanuelsalaremise_id: text,
-                })
-              }
-              style={styles.input}
-            />
-
-            <Text>État au retour:</Text>
-            <TextInput
-              value={currentManuel?.etatmanuelsauretour_id?.toString() || ''}
-              onChangeText={text =>
-                setCurrentManuel({
-                  ...currentManuel,
-                  etatmanuelsauretour_id: text,
-                })
-              }
-              style={styles.input}
-            />
-            */}
-
-            <View style={{flexDirection: 'row', alignItems: 'center'}}>
+            {/* <View style={{flexDirection: 'row', alignItems: 'center'}}>
               <Text>Rendu :</Text>
               <Switch
                 value={currentManuel?.rendu || false} // Vérifie si currentManuel est défini
@@ -670,113 +626,42 @@ const ManuelsUES = ({navigation, route}) => {
                   setCurrentManuel({...currentManuel, rendu: value})
                 }
               />
-            </View>
+            </View> */}
 
-            <Button title="Enregistrer" onPress={handleSave} />
-            <Button title="Annuler" onPress={() => setModalVisible(false)} />
+            <PaperButton mode="contained" onPress={handleSave}>
+              Enregistrer
+            </PaperButton>
+            <PaperButton style={{marginTop: 8}} onPress={() => setModalVisible(false)}>
+              Annuler
+            </PaperButton>
           </View>
         </View>
       </Modal>
     </View>
-
-    /*<View style={styles.card}>
-      <TextInput
-        placeholder="Rechercher..."
-        value={search}
-        onChangeText={setSearch}
-        style={styles.searchInput}
-      />
-
-      <Button
-        title="Ajouter"
-        onPress={() => {
-          setCurrentManuel({});
-          setModalVisible(true);
-        }}
-      />
-      <FlatList
-        data={manuels.filter(m =>
-          Object.values(m).some(value => value?.toString().includes(search)),
-        )}
-        keyExtractor={item => item.id.toString()}
-        renderItem={({item}) => (
-          <View style={styles.container}>
-            <Text style={styles.title}>Commande: {item.commandesues_id}</Text>
-            <Text style={styles.title}>Manuel: {item.manuels_id}</Text>
-            <Text style={styles.title}>
-              Exemplaire: {item.exemplairemanuels_id}
-            </Text>
-            <Text style={styles.title}>
-              Etat à la remise: {item.etatmanuelsalaremise_id}
-            </Text>
-            <Text style={styles.title}>
-              Etat au retour: {item.etatmanuelsauretour_id}
-            </Text>
-            <Text style={styles.title}>
-              Rendu: {item.rendu ? 'Oui' : 'Non'}
-            </Text>
-
-            <View style={styles.actions}>
-              <TouchableOpacity
-                onPress={() => {
-                  setCurrentManuel(item);
-                  setModalVisible(true);
-                }}>
-                <Text style={{fontSize: 20}}>✏️</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleDelete(item.id)}>
-                <Text style={{fontSize: 20}}>🗑️</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-      />
-
-      <Modal visible={modalVisible} transparent={true} animationType="slide">
-        <View style={styles.modalContainer}>
-          <View style={styles.modal}>
-            <Text>Commande ID:</Text>
-            <TextInput
-              value={currentManuel?.commandesues_id?.toString() || ''}
-              onChangeText={text =>
-                setCurrentManuel({...currentManuel, commandesues_id: text})
-              }
-              style={styles.input}
-            />
-            <View style={{flexDirection: 'row', alignItems: 'center'}}>
-              <Text>Rendu :</Text>
-
-              <Switch
-                value={currentManuel.rendu}
-                onChangeText={text =>
-                  setCurrentManuel({...currentManuel, rendu: text})
-                }
-                //onValueChange={setRendu}
-              />
-            </View>
-            <Button title="Enregistrer" onPress={handleSave} />
-            <Button title="Annuler" onPress={() => setModalVisible(false)} />
-          </View>
-        </View>
-      </Modal>
-    </View>*/
   );
 };
 
 const styles = StyleSheet.create({
-  container: {padding: 10},
+  container: {flex: 1, padding: 16, backgroundColor: '#fff'},
   searchInput: {
     height: 40,
     borderColor: 'gray',
     borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
     marginTop: 10,
     marginBottom: 10,
-    paddingHorizontal: 8,
     color: 'black',
   },
-  card: {padding: 15, margin: 10, backgroundColor: '#eee', borderRadius: 10},
-  title: {fontSize: 18, fontWeight: 'bold'},
-  actions: {flexDirection: 'row', justifyContent: 'space-between'},
+  card: {
+    padding: 15,
+    marginBottom: 12,
+    marginHorizontal: 10,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 10,
+  },
+  title: {fontSize: 16, fontWeight: 'bold', marginBottom: 4},
+  actions: {flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8},
   modalContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -784,12 +669,13 @@ const styles = StyleSheet.create({
   },
   modal: {backgroundColor: 'white', padding: 20, borderRadius: 10},
   input: {
-    height: 40,
-    borderColor: 'gray',
+    borderColor: '#ccc',
     borderWidth: 1,
-    marginBottom: 8,
+    borderRadius: 6,
     paddingHorizontal: 8,
-    color: 'black',
+    marginBottom: 10,
+    height: 40,
   },
 });
+
 export default ManuelsUES;

@@ -4,12 +4,14 @@ import {
   Text,
   FlatList,
   TouchableOpacity,
-  TextInput,
   StyleSheet,
   Modal,
-  Button,
   Alert,
 } from 'react-native';
+import {
+  TextInput as PaperTextInput,
+  Button as PaperButton,
+} from 'react-native-paper';
 import uuid from 'react-native-uuid';
 import {db} from '../../db/database';
 import CustomPicker from '../CustomPicker';
@@ -25,6 +27,7 @@ const ManuelElevesUES = ({navigation, route}) => {
   const [mesManuels, setMesManuels] = useState([]);
   const [ues, setUes] = useState([]);
   const [isLocked, setIsLocked] = useState(true);
+  const [commandeEtablissementId, setCommandeEtablissementId] = useState(null);
 
   const {commandeId, eleveInscritId} = route.params || {};
 
@@ -37,7 +40,7 @@ const ManuelElevesUES = ({navigation, route}) => {
   const fetchData = () => {
     db.transaction(tx => {
       tx.executeSql(
-        'SELECT id, referenceexemplaire, manuels_id FROM stockmanuels WHERE statutmanules_id = 1;',
+        'SELECT id, referenceexemplaire, manuels_id, etatmanuels_id FROM stockmanuels;',
         [],
         (_, results) => setStockmanuels(results.rows.raw()),
       );
@@ -54,6 +57,24 @@ const ManuelElevesUES = ({navigation, route}) => {
         [],
         (_, results) => setUes(results.rows.raw()),
       );
+
+      // Récupérer l'établissement lié à la commande courante
+      if (commandeId) {
+        tx.executeSql(
+          `SELECT ues.etablissements_id, commandesues.remiseuefinalise
+           FROM commandesues
+           JOIN ues ON ues.id = commandesues.ues_id
+           WHERE commandesues.id = ?`,
+          [commandeId],
+          (_, {rows}) => {
+            if (rows.length > 0) {
+              const row = rows.item(0);
+              setCommandeEtablissementId(row.etablissements_id);
+              setIsLocked(row.remiseuefinalise === 1);
+            }
+          },
+        );
+      }
     });
   };
 
@@ -71,15 +92,64 @@ const ManuelElevesUES = ({navigation, route}) => {
 
   // 🔹 Filtrer les exemplaires disponibles pour un manuel
   const filterStockForManuel = manuelId => {
-    if (!manuelId) return setFilteredStock([]);
+    if (!manuelId || !commandeEtablissementId)
+      return setFilteredStock([]);
     db.transaction(tx => {
       tx.executeSql(
-        'SELECT id, referenceexemplaire FROM stockmanuels WHERE statutmanules_id = 1 AND manuels_id = ?;',
-        [manuelId],
+        `SELECT sm.id, sm.referenceexemplaire
+         FROM stockmanuels sm
+         JOIN etablissements et ON et.id = sm.etablissements_id
+         LEFT JOIN manuelsues mu
+           ON mu.exemplairemanuels_id = sm.id
+          AND mu.rendu = 0
+         WHERE sm.statutmanules_id = 1
+           AND sm.manuels_id = ?
+           AND et.id = ?
+           AND mu.id IS NULL;`,
+        [manuelId, commandeEtablissementId],
         (_, results) => setFilteredStock(results.rows.raw()),
       );
     });
   };
+
+  const selectedExemplaire = stockmanuels.find(
+    s => s.id === editingManuel?.exemplairemanuels_id,
+  );
+
+  const availableReferenceOptions = filteredStock
+    .filter(f => {
+      const usedIds = manuels
+        .filter(
+          m =>
+            m.commandesues_id === commandeId &&
+            m.manuels_id === (editingManuel?.manuels_id ?? m.manuels_id) &&
+            m.id !== editingManuel?.id,
+        )
+        .map(m => m.exemplairemanuels_id)
+        .filter(Boolean);
+      return !usedIds.includes(f.id);
+    })
+    .map(f => ({
+      label: f.referenceexemplaire,
+      value: f.id,
+    }));
+
+  let referenceOptions = availableReferenceOptions;
+
+  if (selectedExemplaire && editingManuel?.exemplairemanuels_id) {
+    const exists = availableReferenceOptions.some(
+      opt => opt.value === editingManuel.exemplairemanuels_id,
+    );
+    if (!exists) {
+      referenceOptions = [
+        {
+          label: selectedExemplaire.referenceexemplaire,
+          value: editingManuel.exemplairemanuels_id,
+        },
+        ...availableReferenceOptions,
+      ];
+    }
+  }
 
   // 🔹 Finaliser la remise
   const handleFinaliserRemise = () => {
@@ -93,30 +163,44 @@ const ManuelElevesUES = ({navigation, route}) => {
           const nbreManuel = results.rows.item(0).nbreManuel;
 
           tx.executeSql(
-            'SELECT COUNT(*) as nbremanuelsrenseignes FROM manuelsues WHERE commandesues_id = ? AND exemplairemanuels_id IS NOT NULL AND etatmanuelsalaremise_id IS NOT NULL',
+            'SELECT COUNT(*) as nbremanuelsrenseignes FROM manuelsues WHERE commandesues_id = ? AND exemplairemanuels_id IS NOT NULL',
             [commandeId],
             (_, results) => {
               const nbremanuelsrenseignes =
                 results.rows.item(0).nbremanuelsrenseignes;
 
               if (nbreManuel === nbremanuelsrenseignes) {
+                // Marquer tous les exemplaires remis comme indisponibles
                 tx.executeSql(
-                  'UPDATE commandesues SET remiseuefinalise = 1 WHERE id = ?',
+                  `UPDATE stockmanuels
+                   SET statutmanules_id = 2
+                   WHERE id IN (
+                     SELECT DISTINCT exemplairemanuels_id
+                     FROM manuelsues
+                     WHERE commandesues_id = ?
+                       AND exemplairemanuels_id IS NOT NULL
+                   )`,
                   [commandeId],
                   () => {
                     tx.executeSql(
-                      'INSERT INTO sync_log (uuid, table_name, record_id, action, data, source) VALUES (?, ?, ?, ?, ?, ?)',
-                      [
-                        uuid.v4(),
-                        'commandesues',
-                        commandeId,
-                        'update',
-                        JSON.stringify({remiseuefinalise: 1}),
-                        'local',
-                      ],
+                      'UPDATE commandesues SET remiseuefinalise = 1 WHERE id = ?',
+                      [commandeId],
                       () => {
-                        Alert.alert('Succès', 'Remise finalisée !');
-                        navigation.goBack();
+                        tx.executeSql(
+                          'INSERT INTO sync_log (uuid, table_name, record_id, action, data, source) VALUES (?, ?, ?, ?, ?, ?)',
+                          [
+                            uuid.v4(),
+                            'commandesues',
+                            commandeId,
+                            'update',
+                            JSON.stringify({remiseuefinalise: 1}),
+                            'local',
+                          ],
+                          () => {
+                            Alert.alert('Succès', 'Remise finalisée !');
+                            navigation.goBack();
+                          },
+                        );
                       },
                     );
                   },
@@ -141,12 +225,11 @@ const ManuelElevesUES = ({navigation, route}) => {
     }
     db.transaction(tx => {
       tx.executeSql(
-        'UPDATE manuelsues SET commandesues_id=?, manuels_id=?, exemplairemanuels_id=?, etatmanuelsalaremise_id=?, etatmanuelsauretour_id=?, rendu=? WHERE id=?',
+        'UPDATE manuelsues SET commandesues_id=?, manuels_id=?, exemplairemanuels_id=?, etatmanuelsauretour_id=?, rendu=? WHERE id=?',
         [
           editingManuel.commandesues_id,
           editingManuel.manuels_id,
           editingManuel.exemplairemanuels_id,
-          editingManuel.etatmanuelsalaremise_id,
           editingManuel.etatmanuelsauretour_id,
           editingManuel.rendu ? 1 : 0,
           editingManuel.id,
@@ -173,14 +256,20 @@ const ManuelElevesUES = ({navigation, route}) => {
 
   return (
     <View style={styles.container}>
-      <Button title="Précédent" onPress={() => navigation.goBack()} />
-      <Button title="Finaliser cette remise" onPress={handleFinaliserRemise} />
-      <TextInput
+      <PaperButton onPress={() => navigation.goBack()}>Précédent</PaperButton>
+      <PaperButton
+        mode="contained"
+        onPress={handleFinaliserRemise}
+        style={{marginTop: 8}}>
+        Finaliser cette remise
+      </PaperButton>
+      <PaperTextInput
+        mode="outlined"
         placeholder="Rechercher..."
         value={search}
         onChangeText={setSearch}
-        placeholderTextColor="black"
         style={styles.searchInput}
+        left={<PaperTextInput.Icon icon="magnify" />}
       />
 
       <FlatList
@@ -199,9 +288,10 @@ const ManuelElevesUES = ({navigation, route}) => {
           const monexemplaire = exemplaire
             ? exemplaire.referenceexemplaire
             : 'Inconnu';
-          const etatremise = etatmanuels.find(
-            s => s.id === item.etatmanuelsalaremise_id,
-          );
+          // L'état à la remise est désormais lu depuis l'exemplaire en stock
+          const etatremise = exemplaire
+            ? etatmanuels.find(e => e.id === exemplaire.etatmanuels_id)
+            : null;
           const monetatremise = etatremise ? etatremise.etatmanuel : 'Inconnu';
 
           return (
@@ -211,14 +301,16 @@ const ManuelElevesUES = ({navigation, route}) => {
               <Text>Référence: {monexemplaire}</Text>
               <Text>État à la remise: {monetatremise}</Text>
               <View style={styles.actions}>
-                <TouchableOpacity
-                  onPress={() => {
-                    setEditingManuel(item);
-                    filterStockForManuel(item.manuels_id);
-                    setModalVisible(true);
-                  }}>
-                  <Text style={{fontSize: 20}}>✏️</Text>
-                </TouchableOpacity>
+                {!isLocked && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setEditingManuel(item);
+                      filterStockForManuel(item.manuels_id);
+                      setModalVisible(true);
+                    }}>
+                    <Text style={{fontSize: 20}}>✏️</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           );
@@ -237,7 +329,7 @@ const ManuelElevesUES = ({navigation, route}) => {
               onValueChange={v =>
                 setEditingManuel({...editingManuel, commandesues_id: v})
               }
-              isDisabled={isLocked}
+              isDisabled={true}
             />
             <Text>Manuel</Text>
             <CustomPicker
@@ -248,31 +340,46 @@ const ManuelElevesUES = ({navigation, route}) => {
                 setEditingManuel({...editingManuel, manuels_id: v});
                 filterStockForManuel(v);
               }}
-              isDisabled={isLocked}
+              isDisabled={true}
             />
-            <Text>Exemplaire</Text>
-            <CustomPicker
-              label="Exemplaire"
-              items={filteredStock.map(f => ({
-                label: f.referenceexemplaire,
-                value: f.id,
-              }))}
-              selectedId={editingManuel?.exemplairemanuels_id}
-              onValueChange={v =>
-                setEditingManuel({...editingManuel, exemplairemanuels_id: v})
-              }
-            />
-            <Text>État à la remise</Text>
-            <CustomPicker
-              label="État Remise"
-              items={etatmanuels.map(e => ({label: e.etatmanuel, value: e.id}))}
-              selectedId={editingManuel?.etatmanuelsalaremise_id}
-              onValueChange={v =>
-                setEditingManuel({...editingManuel, etatmanuelsalaremise_id: v})
-              }
-            />
-            <Button title="Enregistrer" onPress={handleSave} />
-            <Button title="Annuler" onPress={() => setModalVisible(false)} />
+            <Text>Référence</Text>
+            {isLocked ? (
+              <PaperTextInput
+                mode="outlined"
+                value={selectedExemplaire?.referenceexemplaire || ''}
+                editable={false}
+                style={{marginBottom: 8}}
+              />
+            ) : (
+              <CustomPicker
+                label="Exemplaire"
+                items={[
+                  {
+                    label: 'Sélectionner une référence',
+                    value: null,
+                    isPlaceholder: true,
+                  },
+                  ...referenceOptions,
+                ]}
+                selectedId={editingManuel?.exemplairemanuels_id}
+                onValueChange={v =>
+                  setEditingManuel({
+                    ...editingManuel,
+                    exemplairemanuels_id: v,
+                  })
+                }
+                placeholder="Sélectionner une référence"
+              />
+            )}
+            {/* L'état à la remise provient désormais de stockmanuels et n'est plus modifiable ici */}
+            <PaperButton mode="contained" onPress={handleSave}>
+              Enregistrer
+            </PaperButton>
+            <PaperButton
+              style={{marginTop: 8}}
+              onPress={() => setModalVisible(false)}>
+              Annuler
+            </PaperButton>
           </View>
         </View>
       </Modal>
@@ -312,3 +419,4 @@ const styles = StyleSheet.create({
 });
 
 export default ManuelElevesUES;
+

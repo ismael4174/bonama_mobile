@@ -1,15 +1,6 @@
 import React, {useState, useEffect, useCallback} from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Modal,
-  TextInput,
-  Button,
-  Alert,
-} from 'react-native';
+import {View, Text, FlatList, TouchableOpacity, StyleSheet, Modal, Alert} from 'react-native';
+import {TextInput as PaperTextInput, Button as PaperButton, List, Divider} from 'react-native-paper';
 import uuid from 'react-native-uuid';
 import {db} from '../../db/database';
 import CustomPicker from '../CustomPicker';
@@ -23,6 +14,8 @@ const CeInscritsvalidation = () => {
   const [uesId, setUesId] = useState('');
   const [nombretotalmanuel, setNombreTotalManuel] = useState('');
   const [selectedCommande, setSelectedCommande] = useState(null);
+  const [editCommande, setEditCommande] = useState(null);
+  const [editedDetails, setEditedDetails] = useState([]); // détails modifiables (quantités)
 
   const anneeScolaireId = useAnneescolairesID();
   const etablissementId = useEtablissementId();
@@ -352,38 +345,91 @@ const CeInscritsvalidation = () => {
     });
   }, [etablissementId]);
 
+  const openEditModal = commande => {
+    setEditCommande(commande);
+    setEditedDetails(
+      (commande.details || []).map(d => ({
+        ...d,
+        nombremanuelStr: d.nombremanuel != null ? String(d.nombremanuel) : '0',
+      })),
+    );
+    setModalVisible(true);
+  };
+
+  const handleChangeDetailQuantity = (detailId, value) => {
+    const numeric = value.replace(/[^0-9]/g, '');
+    setEditedDetails(prev =>
+      prev.map(d =>
+        d.id === detailId ? {...d, nombremanuelStr: numeric} : d,
+      ),
+    );
+  };
+
+  const saveEditedCommande = () => {
+    if (!editCommande) {
+      setModalVisible(false);
+      return;
+    }
+
+    db.transaction(tx => {
+      let total = 0;
+
+      editedDetails.forEach(d => {
+        const qty = parseInt(d.nombremanuelStr || '0', 10) || 0;
+        total += qty;
+        tx.executeSql(
+          'UPDATE detailscommandeues SET nombremanuel = ? WHERE id = ?;',
+          [qty, d.id],
+        );
+      });
+
+      // Mettre à jour le nombre total sur la commande
+      tx.executeSql(
+        'UPDATE commandesues SET nombretotalmanuel = ? WHERE id = ?;',
+        [total, editCommande.id],
+        () => {
+          fetchCommandes();
+          setModalVisible(false);
+          setEditCommande(null);
+          setEditedDetails([]);
+        },
+      );
+    });
+  };
+
   const renderItem = ({item}) => (
-    <View style={styles.card}>
-      <Text style={styles.title}>{item.ues_nom}</Text>
-      {item.details.length > 0 ? (
+    <List.Item
+      title={item.ues_nom}
+      titleNumberOfLines={3}
+      titleEllipsizeMode="tail"
+      description={() => (
         <View>
-          {item.details.map((d, i) => (
-            <Text key={i}>
-              📘 {d.manuel_nom} — {d.nombremanuel}
-            </Text>
-          ))}
+          {item.details.length > 0 ? (
+            <View>
+              {item.details.map((d, i) => (
+                <Text key={i}>📘 {d.manuel_nom} — {d.nombremanuel}</Text>
+              ))}
+            </View>
+          ) : (
+            <Text style={{color: '#888'}}>Aucun manuel ajouté.</Text>
+          )}
         </View>
-      ) : (
-        <Text style={{color: '#888'}}>Aucun manuel ajouté.</Text>
       )}
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => confirmValidation(item.id)}>
-          <Text>✅ Valider</Text>
-        </TouchableOpacity>
-        {/* <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => {
-            setSelectedCommande(item);
-            setUesId(item.ues_id);
-            setNombreTotalManuel(item.nombretotalmanuel.toString());
-            setModalVisible(true);
-          }}>
-          <Text>🛠 Modifier les détails</Text>
-        </TouchableOpacity>*/}
-      </View>
-    </View>
+      left={props => <List.Icon {...props} icon="account-group" />}
+      right={props => (
+        <View style={{justifyContent: 'center'}}>
+          <PaperButton
+            mode="outlined"
+            style={{marginBottom: 4}}
+            onPress={() => openEditModal(item)}>
+            Modifier
+          </PaperButton>
+          <PaperButton mode="contained" onPress={() => confirmValidation(item.id)}>
+            Valider
+          </PaperButton>
+        </View>
+      )}
+    />
   );
 
   return (
@@ -391,25 +437,58 @@ const CeInscritsvalidation = () => {
       <FlatList
         data={commandes}
         keyExtractor={item => item.id.toString()}
+        ItemSeparatorComponent={Divider}
         renderItem={renderItem}
       />
       <Modal visible={modalVisible} animationType="slide">
-        <View style={{padding: 20}}>
-          <Text style={{fontWeight: 'bold'}}>Formulaire de modification</Text>
-          <CustomPicker
-            items={ues.map(u => ({label: u.nom, value: u.id}))}
-            onValueChange={setUesId}
-            selectedValue={uesId}
-            placeholder="Choisir UES"
-          />
-          <TextInput
-            style={styles.input}
-            value={nombretotalmanuel}
-            onChangeText={setNombreTotalManuel}
-            placeholder="Total manuels"
-            keyboardType="numeric"
-          />
-          <Button title="Enregistrer" onPress={() => setModalVisible(false)} />
+        <View style={{padding: 20, flex: 1}}>
+          <Text style={{fontWeight: 'bold', marginBottom: 10}}>
+            Modifier les quantités de la commande
+          </Text>
+          {editCommande && (
+            <Text style={{marginBottom: 10}}>
+              CE / UE : {editCommande.ues_nom}
+            </Text>
+          )}
+
+          {editedDetails.length > 0 ? (
+            <FlatList
+              data={editedDetails}
+              keyExtractor={d => d.id.toString()}
+              renderItem={({item}) => (
+                <View style={{marginBottom: 10}}>
+                  <Text style={{marginBottom: 4}}>📘 {item.manuel_nom}</Text>
+                  <PaperTextInput
+                    mode="outlined"
+                    style={styles.input}
+                    keyboardType="numeric"
+                    value={item.nombremanuelStr}
+                    onChangeText={text =>
+                      handleChangeDetailQuantity(item.id, text)
+                    }
+                  />
+                </View>
+              )}
+            />
+          ) : (
+            <Text style={{color: '#888'}}>Aucun détail à modifier.</Text>
+          )}
+
+          <PaperButton
+            mode="contained"
+            onPress={saveEditedCommande}
+            style={{marginTop: 10}}>
+            Enregistrer
+          </PaperButton>
+          <PaperButton
+            style={{marginTop: 10}}
+            onPress={() => {
+              setModalVisible(false);
+              setEditCommande(null);
+              setEditedDetails([]);
+            }}>
+            Annuler
+          </PaperButton>
         </View>
       </Modal>
     </View>
@@ -431,7 +510,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   actionButton: {backgroundColor: '#ddd', padding: 8, borderRadius: 5},
-  input: {borderWidth: 1, borderColor: '#ccc', padding: 8, marginVertical: 10},
+  input: {marginVertical: 10},
 });
 
 export default CeInscritsvalidation;

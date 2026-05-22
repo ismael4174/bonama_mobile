@@ -1,15 +1,9 @@
 import React, {useState, useEffect} from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Button,
-  Modal,
-  Alert,
-} from 'react-native';
+import {View, Text, FlatList, TouchableOpacity, StyleSheet, Button, Modal, Alert} from 'react-native';
+import {TextInput as PaperTextInput, List, Divider, Button as PaperButton} from 'react-native-paper';
+import EmptyState from '../ui/EmptyState';
+import LoadingState from '../ui/LoadingState';
+import ErrorState from '../ui/ErrorState';
 import SQLite from 'react-native-sqlite-storage';
 import axios from 'axios';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -37,6 +31,11 @@ const ManuelRetrouve = () => {
   const [etatmanuel, setEtatmanuel] = useState('');
   const [statuts, setStatuts] = useState([]);
   const [etatmanuels, setEtatmanuels] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [selectedManuelId, setSelectedManuelId] = useState(null);
+  const [assignationsEleves, setAssignationsEleves] = useState([]);
+  const [assignationsUes, setAssignationsUes] = useState([]);
 
   //const anneescolairesID = parseInt(UseAnneescolairesID(), 10);
   const etablissementsID = parseInt(useEtablissementId(), 10);
@@ -159,15 +158,57 @@ const ManuelRetrouve = () => {
   }, []);
 
   const fetchData = () => {
-    db.transaction(tx => {
-      tx.executeSql(
-        'SELECT * FROM stockmanuels WHERE etablissements_id = ?',
-        [etablissementsID],
-        (_, {rows}) => {
-          setData(rows.raw());
-        },
-      );
-    });
+    setError('');
+    setLoading(true);
+    db.transaction(
+      tx => {
+        tx.executeSql(
+          'SELECT * FROM stockmanuels WHERE etablissements_id = ?',
+          [etablissementsID],
+          (_, {rows}) => {
+            setData(rows.raw());
+            setLoading(false);
+          },
+          (_, err) => {
+            setError('Impossible de charger les manuels retrouvés.');
+            setLoading(false);
+            return false;
+          },
+        );
+
+        tx.executeSql(
+          `SELECT
+             sto.id AS stock_id,
+             ei.id AS elevesinscrits_id,
+             e.matriculeeleve,
+             e.nomeleve,
+             e.prenomseleve
+           FROM manuelseleves me
+           JOIN stockmanuels sto ON sto.id = me.exemplairemanuelseleve_id
+           JOIN elevesinscrits ei ON ei.id = me.elevesinscrits_id
+           JOIN eleves e ON e.id = ei.eleves_id;`,
+          [],
+          (_, {rows}) => setAssignationsEleves(rows.raw()),
+        );
+
+        tx.executeSql(
+          `SELECT
+             sto.id AS stock_id,
+             c.id AS commandesues_id,
+             u.denominationue
+           FROM manuelsues mu
+           JOIN stockmanuels sto ON sto.id = mu.exemplairemanuels_id
+           JOIN commandesues c ON c.id = mu.commandesues_id
+           JOIN ues u ON u.id = c.ues_id;`,
+          [],
+          (_, {rows}) => setAssignationsUes(rows.raw()),
+        );
+      },
+      err => {
+        setError('Erreur de transaction lors du chargement.');
+        setLoading(false);
+      },
+    );
   };
   const addOrUpdateItem = () => {
     db.transaction(tx => {
@@ -330,17 +371,67 @@ const ManuelRetrouve = () => {
 
   return (
     <View style={styles.container}>
-      <TextInput
+      {loading ? (
+        <LoadingState label="Chargement des manuels retrouvés..." />
+      ) : error ? (
+        <ErrorState subtitle={error} onAction={fetchData} />
+      ) : (
+        <>
+      <CustomPicker
+        label="Matière"
+        items={manuels.map(m => ({label: m.titre, value: m.id}))}
+        placeholder="Sélectionner un manuel"
+        selectedId={selectedManuelId}
+        onValueChange={value => setSelectedManuelId(value)}
+        displayKey="label"
+        valueKey="value"
+      />
+
+      <PaperTextInput
+        mode="outlined"
         placeholder="Rechercher..."
         value={search}
         onChangeText={setSearch}
-        placeholderTextColor="black"
+        left={<PaperTextInput.Icon icon="magnify" />}
         style={styles.searchInput}
+        accessibilityLabel="Recherche"
+        accessibilityHint="Filtrer la liste des manuels"
       />
 
       <FlatList
-        data={data.filter(item => item.referenceexemplaire.includes(search))}
+        data={data.filter(item => {
+          const manuelMatch = selectedManuelId
+            ? Number(item.manuels_id) === Number(selectedManuelId)
+            : true;
+
+          const q = (search || '').toLowerCase();
+          if (!q) {
+            return manuelMatch;
+          }
+
+          const ref = (item.referenceexemplaire || '').toLowerCase();
+          const statutLabel = (
+            statuts.find(s => s.id === item.statutmanules_id)?.statut || ''
+          ).toLowerCase();
+          const manuelLabel = (
+            manuels.find(m => m.id === item.manuels_id)?.titre || ''
+          ).toLowerCase();
+          const etatLabel = (
+            etatmanuels.find(e => e.id === item.etatmanuels_id)?.etatmanuel || ''
+          ).toLowerCase();
+
+          const searchMatch =
+            ref.includes(q) ||
+            statutLabel.includes(q) ||
+            manuelLabel.includes(q) ||
+            etatLabel.includes(q);
+
+          return manuelMatch && searchMatch;
+        })}
         keyExtractor={item => `${item.id}-${item.referenceexemplaire}`}
+        contentContainerStyle={{paddingBottom: 24}}
+        ItemSeparatorComponent={Divider}
+        ListEmptyComponent={<EmptyState title="Aucun manuel retrouvé" subtitle="Ajustez la recherche pour voir des résultats" />}
         renderItem={({item}) => {
           const {
             referenceexemplaire,
@@ -363,23 +454,83 @@ const ManuelRetrouve = () => {
             etatmanuels.find(e => e.id === etatmanuels_id)?.etatmanuel ||
             'Inconnu';
 
-          return (
-            <View style={styles.card}>
-              <Text style={styles.title}>Manuel : {libelleManuel}</Text>
-              <Text style={styles.title}>Ref : {referenceexemplaire}</Text>
-              <Text style={styles.title}>Statut : {libellestatut}</Text>
-              <Text style={styles.title}>État : {libelleetatmanuel}</Text>
+          const affectationsEleves = assignationsEleves.filter(
+            a => a.stock_id === item.id,
+          );
+          const affectationsUes = assignationsUes.filter(
+            a => a.stock_id === item.id,
+          );
 
-              <View style={styles.actions}>
+          return (
+            <List.Item
+              title={`Manuel: ${libelleManuel}`}
+              titleNumberOfLines={3}
+              titleEllipsizeMode="tail"
+              description={() => (
+                <View>
+                  <Text style={styles.desc}>Ref: {referenceexemplaire}</Text>
+                  <Text
+                    style={[
+                      styles.desc,
+                      {
+                        color:
+                          Number(statutmanules_id) === 1 ? '#2e7d32' : '#d32f2f',
+                        fontWeight: '600',
+                      },
+                    ]}>
+                    Statut: {libellestatut}
+                  </Text>
+                  <Text style={styles.desc}>État: {libelleetatmanuel}</Text>
+                </View>
+              )}
+              left={props => <List.Icon {...props} icon="book" />}
+              right={props => (
                 <TouchableOpacity
                   onPress={() => {
-                    setCurrentItem(item);
+                    // Charger l'élément courant et ses affectations détaillées
+                    setCurrentItem({
+                      ...item,
+                      manuelseleves: [],
+                      manuelsues: [],
+                    });
+
+                    db.transaction(tx => {
+                      tx.executeSql(
+                        'SELECT * FROM manuelseleves WHERE exemplairemanuelseleve_id = ?;',
+                        [item.id],
+                        (_, res1) => {
+                          const elevesRows = res1.rows.raw();
+                          setCurrentItem(prev => ({
+                            ...prev,
+                            manuelseleves: elevesRows,
+                          }));
+                        },
+                      );
+
+                      tx.executeSql(
+                        'SELECT * FROM manuelsues WHERE exemplairemanuels_id = ?;',
+                        [item.id],
+                        (_, res2) => {
+                          const uesRows = res2.rows.raw();
+                          setCurrentItem(prev => ({
+                            ...prev,
+                            manuelsues: uesRows,
+                          }));
+                        },
+                      );
+                    });
+
                     setModalVisible(true);
-                  }}>
-                  <Text style={styles.editIcon}>✏️</Text>
+                  }}
+                  style={{paddingHorizontal: 12, justifyContent: 'center'}}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Voir les détails du manuel ${libelleManuel}, référence ${referenceexemplaire}`}
+                  hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+                  <Icon name="visibility" size={22} color="#007AFF" />
                 </TouchableOpacity>
-              </View>
-            </View>
+              )}
+              accessibilityLabel={`Manuel ${libelleManuel}, référence ${referenceexemplaire}, statut ${libellestatut}, état ${libelleetatmanuel}`}
+            />
           );
         }}
       />
@@ -399,13 +550,14 @@ const ManuelRetrouve = () => {
           />
 
           <Text>Référence :</Text>
-          <TextInput
+          <PaperTextInput
+            mode="outlined"
             placeholder="Référence"
             value={currentItem?.referenceexemplaire || ''}
             onChangeText={text =>
               setCurrentItem(prev => ({...prev, referenceexemplaire: text}))
             }
-            style={styles.input}
+            style={{marginBottom: 8}}
           />
 
           <Text>Statut :</Text>
@@ -432,75 +584,104 @@ const ManuelRetrouve = () => {
             valueKey="value"
           />
 
-          <View style={styles.section}>
+          {/* <View style={styles.section}>
             <Text>Manuels Élèves :</Text>
             {currentItem?.manuelseleves?.map((eleve, i) => (
               <View key={i} style={styles.subCard}>
                 <Text>Manuel ID :</Text>
-                <TextInput
+                <PaperTextInput
+                  mode="outlined"
                   value={eleve.manuels_id?.toString() || ''}
                   onChangeText={text =>
                     handleManuelEleveChange(i, 'manuels_id', text)
                   }
                   keyboardType="numeric"
-                  style={styles.input}
+                  style={{marginBottom: 8}}
                 />
                 <Text>Couverture :</Text>
-                <TextInput
+                <PaperTextInput
+                  mode="outlined"
                   value={eleve.couverture || ''}
                   onChangeText={text =>
                     handleManuelEleveChange(i, 'couverture', text)
                   }
-                  style={styles.input}
+                  style={{marginBottom: 8}}
                 />
               </View>
             ))}
-          </View>
+          </View> */}
 
-          <View style={styles.section}>
+          {/* <View style={styles.section}>
             <Text>Manuels UES :</Text>
             {currentItem?.manuelsues?.map((ues, i) => (
               <View key={i} style={styles.subCard}>
                 <Text>Commandes UES ID :</Text>
-                <TextInput
+                <PaperTextInput
+                  mode="outlined"
                   value={ues.commandesues_id?.toString() || ''}
                   onChangeText={text =>
                     handleManuelUesChange(i, 'commandesues_id', text)
                   }
                   keyboardType="numeric"
-                  style={styles.input}
+                  style={{marginBottom: 8}}
                 />
                 <Text>Manuel ID :</Text>
-                <TextInput
+                <PaperTextInput
+                  mode="outlined"
                   value={ues.manuels_id?.toString() || ''}
                   onChangeText={text =>
                     handleManuelUesChange(i, 'manuels_id', text)
                   }
                   keyboardType="numeric"
-                  style={styles.input}
+                  style={{marginBottom: 8}}
                 />
               </View>
             ))}
-          </View>
+          </View> */}
 
-          <Button title="RETOUR" onPress={() => setModalVisible(false)} />
+          {currentItem?.id && (
+            <View style={styles.section}>
+              <Text style={{fontWeight: 'bold', marginBottom: 4}}>
+                Informations d'attribution
+              </Text>
+              {assignationsEleves
+                .filter(a => a.stock_id === currentItem.id)
+                .map((a, idx) => (
+                  <Text key={`eleve-${idx}`} style={styles.desc}>
+                    Élève: {a.matriculeeleve} - {a.nomeleve} {a.prenomseleve}
+                  </Text>
+                ))}
+              {assignationsUes
+                .filter(a => a.stock_id === currentItem.id)
+                .map((u, idx) => (
+                  <Text key={`ce-${idx}`} style={styles.desc}>
+                    CE: {u.denominationue}
+                  </Text>
+                ))}
+              {assignationsEleves.filter(a => a.stock_id === currentItem.id)
+                .length === 0 &&
+              assignationsUes.filter(a => a.stock_id === currentItem.id).length ===
+                0 ? (
+                <Text style={styles.desc}>Aucune attribution trouvée.</Text>
+              ) : null}
+            </View>
+          )}
+
+          <PaperButton onPress={() => setModalVisible(false)}>RETOUR</PaperButton>
         </View>
       </Modal>
+      </>
+      )}
     </View>
   );
 };
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     padding: 10,
   },
   searchInput: {
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
     marginBottom: 10,
-    paddingHorizontal: 10,
-    color: 'black',
-    borderRadius: 5,
   },
   card: {
     padding: 15,
@@ -513,6 +694,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 4,
   },
+  desc: {fontSize: 14, marginTop: 2},
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',

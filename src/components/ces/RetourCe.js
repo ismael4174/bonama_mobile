@@ -6,9 +6,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   Modal,
-  TextInput,
-  Button,
 } from 'react-native';
+import {
+  TextInput as PaperTextInput,
+  List,
+  Divider,
+  Button as PaperButton,
+} from 'react-native-paper';
 import uuid from 'react-native-uuid';
 import RNHTMLtoPDF from 'react-native-html-to-pdf';
 import RNFS from 'react-native-fs';
@@ -20,6 +24,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import CustomPicker from '../CustomPicker';
 import RetourCeDetails from './RetourCeDetails'; // Importez le composant RemiseCeDetails
 import useEtablissementId from '../../parametres/etablissement.js';
+import {useFocusEffect} from '@react-navigation/native';
 
 /*const dbName = 'bd_bonamas_local.db';
 const db = SQLite.openDatabase({name: dbName, location: 'default'});
@@ -165,7 +170,7 @@ const CeInscrits = ({navigation}) => {
     db.transaction(
       tx => {
         tx.executeSql(
-          'SELECT details.*, commandesues.* FROM commandesues INNER JOIN detailscommandeues AS details ON commandesues.id = details.commandesues_id INNER JOIN ues ON ues.id = commandesues.ues_id WHERE ues.etablissements_id = ? AND commandesues.anneescolaires_id = ?;',
+          'SELECT details.*, commandesues.* FROM commandesues INNER JOIN detailscommandeues AS details ON commandesues.id = details.commandesues_id INNER JOIN ues ON ues.id = commandesues.ues_id WHERE ues.etablissements_id = ? AND commandesues.anneescolaires_id = ? AND commandesues.remiseuefinalise = 1;',
           [etablissementIdInteger, anneescolairesID],
           (_, results) => {
             const rows = results.rows.raw();
@@ -235,27 +240,14 @@ const CeInscrits = ({navigation}) => {
     });
   }, [fetchCommandes, generateReceiptPDF]);
 
+  useFocusEffect(
+    useCallback(() => {
+      fetchCommandes();
+    }, [fetchCommandes]),
+  );
+
   const handleSearch = useCallback(text => {
     setSearchText(text);
-    const query =
-      text.trim() !== ''
-        ? `SELECT commandesues.* FROM commandesues JOIN ues ON ues.id = commandesues.ues_id JOIN anneescolaires ON anneescolaires.id = commandesues.anneescolaires_id WHERE LOWER(ues.denominationue) LIKE LOWER(?) OR LOWER(anneescolaires.libelleanneescolaire) LIKE LOWER(?)`
-        : `SELECT * FROM commandesues`;
-    const params = text.trim() !== '' ? [`%${text}%`, `%${text}%`] : [];
-
-    db.transaction(tx => {
-      tx.executeSql(
-        query,
-        params,
-        (_, {rows}) => {
-          setCommandes(rows.raw());
-        },
-        (_, error) => {
-          console.error('Erreur SQL : ', error);
-          return false;
-        },
-      );
-    });
   }, []);
 
   const handleSave = useCallback(() => {
@@ -496,61 +488,83 @@ const CeInscrits = ({navigation}) => {
     }));
   }, [commandes, ueselect, anneescolaire]);
 
+  const filteredCommandes = useMemo(() => {
+    const list = memoizedCommandes;
+    const q = (searchText || '').trim().toLowerCase();
+    if (!q) return list;
+    return list.filter(
+      c =>
+        (c.ues_name || '').toLowerCase().includes(q) ||
+        (c.anneescolaire_name || '').toLowerCase().includes(q),
+    );
+  }, [memoizedCommandes, searchText]);
+
   return (
     <View style={styles.container}>
-      <TextInput
+      <PaperTextInput
+        mode="outlined"
         style={styles.searchInput}
-        placeholder="Recherche rapide"
-        placeholderTextColor="black"
+        placeholder="Rechercher un CE ou une année scolaire"
         value={searchText}
         onChangeText={handleSearch}
+        left={<PaperTextInput.Icon icon="magnify" />}
       />
 
       <FlatList
-        data={memoizedCommandes}
+        data={filteredCommandes}
         keyExtractor={item => item.id.toString()}
         contentContainerStyle={styles.listContent}
+        ItemSeparatorComponent={Divider}
         renderItem={({item}) => (
-          <View style={styles.card}>
-            <Text style={styles.title}>CE : {item.ues_name}</Text>
-
-            {item.details.map(detail => (
-              <View key={detail.id} style={styles.detailBlock}>
-                <Text style={styles.detailText}>
-                  Manuel : {manuel(detail.manuels_id)}
-                </Text>
-                <Text style={styles.detailText}>
-                  Quantité : {detail.nombremanuel}
-                </Text>
+          <List.Item
+            title={`  ${item.ues_name}`}
+            titleNumberOfLines={3}
+            titleEllipsizeMode="tail"
+            description={() => (
+              <View>
+                {item.details.map((detail, idx) => (
+                  <View key={`${item.id}-${idx}`} style={styles.detailBlock}>
+                    <Text style={styles.detailText}>
+                      Manuel: {manuel(detail.manuels_id)}
+                    </Text>
+                    <Text style={styles.detailText}>
+                      Quantité: {detail.nombremanuel}
+                    </Text>
+                  </View>
+                ))}
               </View>
-            ))}
-
-            <View style={styles.actions}>
-              {item.retouruefinalise === 0 ? (
-                <TouchableOpacity
-                  onPress={() => {
-                    handleEditerRetour(item);
-                    navigation.navigate('RetourCeDetails', {
-                      commandeId: item.id,
-                    });
-                  }}
-                  style={styles.buttonBlue}>
-                  <Text style={styles.buttonText}>Éditer</Text>
-                </TouchableOpacity>
-              ) : (
-                <>
-                  <TouchableOpacity style={styles.buttonRed}>
-                    <Text style={styles.buttonText}>Déjà finalisée</Text>
-                  </TouchableOpacity>
-                  {/* <TouchableOpacity
-                    onPress={() => handleTelechargerPDF(item)}
-                    style={styles.buttonBlue}>
-                    <Text style={styles.buttonText}>Reçu</Text>
-                  </TouchableOpacity> */}
-                </>
-              )}
-            </View>
-          </View>
+            )}
+            left={props => <List.Icon {...props} icon="account-group" />}
+            right={props => (
+              <View style={{justifyContent: 'center'}}>
+                {item.retouruefinalise === 0 ? (
+                  <PaperButton
+                    mode="contained"
+                    onPress={() => {
+                      handleEditerRetour(item);
+                      navigation.navigate('RetourCeDetails', {
+                        commandeId: item.id,
+                      });
+                    }}>
+                    Éditer
+                  </PaperButton>
+                ) : (
+                  <PaperButton
+                    mode="contained"
+                    disabled
+                    compact
+                    style={{
+                      paddingHorizontal: 4,
+                      paddingVertical: 0,
+                      minWidth: 10,
+                    }}
+                    labelStyle={{fontSize: 10}}>
+                    Déjà retournés
+                  </PaperButton>
+                )}
+              </View>
+            )}
+          />
         )}
       />
 
@@ -582,7 +596,8 @@ const CeInscrits = ({navigation}) => {
               valueKey="value"
             />
 
-            <TextInput
+            <PaperTextInput
+              mode="outlined"
               placeholder="Nombre total de manuels"
               value={nombretotalmanuel}
               onChangeText={setNombretotalmanuel}
@@ -609,11 +624,12 @@ const CeInscrits = ({navigation}) => {
                     valueKey="value"
                   />
 
-                  <TextInput
+                  <PaperTextInput
+                    mode="outlined"
                     style={styles.quantityInput}
                     placeholder="Quantité"
                     keyboardType="numeric"
-                    value={item.nombremanuel.toString()}
+                    value={String(item.nombremanuel)}
                     onChangeText={text =>
                       handleDetailChange(index, 'nombremanuel', text)
                     }
@@ -626,9 +642,18 @@ const CeInscrits = ({navigation}) => {
               )}
             />
 
-            <Button title="Ajouter un détail" onPress={handleAddDetail} />
-            <Button title="Enregistrer" onPress={handleSave} />
-            <Button title="Annuler" onPress={closeModal} />
+            <PaperButton onPress={handleAddDetail}>
+              Ajouter un détail
+            </PaperButton>
+            <PaperButton
+              mode="contained"
+              onPress={handleSave}
+              style={{marginTop: 8}}>
+              Enregistrer
+            </PaperButton>
+            <PaperButton style={{marginTop: 8}} onPress={closeModal}>
+              Annuler
+            </PaperButton>
           </View>
         </View>
       </Modal>
@@ -806,3 +831,4 @@ const styles = StyleSheet.create({
 });*/
 
 export default CeInscrits;
+

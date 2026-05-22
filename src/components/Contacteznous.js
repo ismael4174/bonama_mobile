@@ -5,8 +5,8 @@ const Contacteznous = ({navigation}) => {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Contactez-nous</Text>
-      <Text style={styles.text}>📧 Email: contact@bonamas.com</Text>
-      <Text style={styles.text}>📞 Téléphone: +225 07 00 00 00</Text>
+      <Text style={styles.text}>📧 Email: a.niangoran@education.gouv.ci</Text>
+      <Text style={styles.text}>📞 Téléphone: +225 01 53 98 98 57</Text>
 
       <View style={styles.buttonRow}>
         <TouchableOpacity

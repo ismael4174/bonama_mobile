@@ -1,14 +1,7 @@
 import React, {useState, useEffect, useCallback, useMemo} from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Modal,
-  TextInput,
-  Button,
-} from 'react-native';
+import {View, Text, FlatList, TouchableOpacity, StyleSheet, Modal, Button} from 'react-native';
+import {TextInput as PaperTextInput, List, Divider} from 'react-native-paper';
+import EmptyState from '../ui/EmptyState';
 import uuid from 'react-native-uuid';
 import {db} from '../../db/database';
 import SQLite from 'react-native-sqlite-storage';
@@ -165,27 +158,8 @@ const CeInscrits = () => {
   }, [fetchCommandes]);
 
   const handleSearch = useCallback(text => {
-    setSearchText(text);
-    const query =
-      text.trim() !== ''
-        ? `SELECT commandesues.* FROM commandesues JOIN ues ON ues.id = commandesues.ues_id JOIN anneescolaires ON anneescolaires.id = commandesues.anneescolaires_id WHERE LOWER(ues.denominationue) LIKE LOWER(?) OR LOWER(anneescolaires.libelleanneescolaire) LIKE LOWER(?)`
-        : `SELECT * FROM commandesues`;
-    const params = text.trim() !== '' ? [`%${text}%`, `%${text}%`] : [];
-
-    db.transaction(tx => {
-      tx.executeSql(
-        query,
-        params,
-        (_, {rows}) => {
-          setCommandes(rows.raw());
-        },
-        (_, error) => {
-          console.error('Erreur SQL : ', error);
-          return false;
-        },
-      );
-    });
-  }, []);
+  setSearchText(text);
+}, []);
 
   const handleSave = useCallback(() => {
     if (!uesId || details.length === 0) {
@@ -429,6 +403,17 @@ const CeInscrits = () => {
     }));
   }, [commandes, ueselect, anneescolaire]);
 
+  const filteredCommandes = useMemo(() => {
+  const list = memoizedCommandes;
+  const q = (searchText || '').trim().toLowerCase();
+  if (!q) return list;
+  return list.filter(
+    c =>
+      (c.ues_name || '').toLowerCase().includes(q) ||
+      (c.anneescolaire_name || '').toLowerCase().includes(q),
+  );
+}, [memoizedCommandes, searchText]);
+
   return (
     <View style={styles.container}>
       {/* 🟢 Bande de notification du total des commandes */}
@@ -439,38 +424,40 @@ const CeInscrits = () => {
         </Text>
       </View>
 
-      <TextInput
+      <PaperTextInput
+        mode="outlined"
         style={styles.searchInput}
-        placeholder="Recherche rapide"
+        placeholder="Rechercher un CE"
         value={searchText}
-        onChangeText={text => {
-          setSearchText(text);
-          // tu peux appeler handleSearch ici si nécessaire
-        }}
-        placeholderTextColor="black"
+        onChangeText={handleSearch}
+        left={<PaperTextInput.Icon icon="magnify" />}
       />
 
       <FlatList
-        data={memoizedCommandes}
+        data={filteredCommandes}
         keyExtractor={item => item.id.toString()}
         contentContainerStyle={styles.listContent}
+        ItemSeparatorComponent={Divider}
+        ListEmptyComponent={<EmptyState title="Aucune commande" subtitle="Aucune souscription CE trouvée" />}
         renderItem={({item}) => (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>CE: {item.ues_name}</Text>
-
-            {item.details.map(detail => (
-              <View key={detail.id} style={styles.detailItem}>
-                <Text style={styles.detailText}>
-                  Manuel :{' '}
-                  {manuels.find(m => m.id === detail.manuels_id)?.titre ||
-                    'Inconnu'}
-                </Text>
-                <Text style={styles.detailText}>
-                  Quantité : {detail.nombremanuel}
-                </Text>
+          <List.Item
+            title={`  ${item.ues_name}`}
+            titleNumberOfLines={3}
+            titleEllipsizeMode="tail"
+            description={() => (
+              <View>
+                {item.details.map(detail => (
+                  <View key={detail.id} style={styles.detailItem}>
+                    <Text style={styles.detailText}>
+                      Manuel: {manuels.find(m => m.id === detail.manuels_id)?.titre || 'Inconnu'}
+                    </Text>
+                    <Text style={styles.detailText}>Quantité: {detail.nombremanuel}</Text>
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
+            )}
+            left={props => <List.Icon {...props} icon="account-group" />}
+          />
         )}
       />
 
@@ -501,13 +488,7 @@ const styles = StyleSheet.create({
     color: '#ffd700', // jaune pour le chiffre
   },
   searchInput: {
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
-    borderRadius: 8,
     marginBottom: 12,
-    paddingHorizontal: 10,
-    color: 'black',
   },
   listContent: {
     paddingBottom: 100,

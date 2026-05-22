@@ -1,5 +1,6 @@
 import React, {useEffect, useState} from 'react';
-import {View, Text, FlatList, StyleSheet, TextInput} from 'react-native';
+import {View, Text, FlatList, StyleSheet} from 'react-native';
+import {TextInput as PaperTextInput, List, Divider} from 'react-native-paper';
 import {db} from '../../db/database';
 import useAnneescolairesID from '../../parametres/anneescolaire.js';
 import useEtablissementId from '../../parametres/etablissement.js';
@@ -38,13 +39,15 @@ const ElevesInscrits = () => {
       let params = [anneescolairesID, etablissementsID];
 
       if (searchText) {
-        query += ` AND (e.nomeleve LIKE ? OR e.matriculeeleve LIKE ? OR e.prenomseleve LIKE ?)`;
-        params = [
-          ...params,
-          `%${searchText}%`,
-          `%${searchText}%`,
-          `%${searchText}%`,
-        ];
+        query += ` AND (
+    UPPER(e.nomeleve) LIKE ?
+    OR UPPER(e.prenomseleve) LIKE ?
+    OR UPPER(e.matriculeeleve) LIKE ?
+    OR UPPER(COALESCE(e.nomeleve,'') || ' ' || COALESCE(e.prenomseleve,'')) LIKE ?
+  )`;
+
+        const like = `%${searchText.toUpperCase()}%`;
+        params.push(like, like, like, like);
       }
 
       tx.executeSql(
@@ -74,26 +77,32 @@ const ElevesInscrits = () => {
         </Text>
       </View>
 
-      <TextInput
+      <PaperTextInput
+        mode="outlined"
         style={styles.searchInput}
         placeholder="Rechercher par nom, matricule ou prénom"
         value={searchText}
         onChangeText={setSearchText}
-        placeholderTextColor="black"
+        left={<PaperTextInput.Icon icon="magnify" />}
       />
 
       <FlatList
         data={eleves}
         keyExtractor={item => item.id.toString()}
+        ItemSeparatorComponent={Divider}
         renderItem={({item}) => (
-          <View style={styles.card}>
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Élève :</Text> {item.eleve}
-            </Text>
-            <Text style={styles.text}>
-              <Text style={styles.bold}>Classe :</Text> {item.classe}
-            </Text>
-          </View>
+          <List.Item
+            title={item.eleve}
+            titleNumberOfLines={3}
+            titleEllipsizeMode="tail"
+            description={() => (
+              <View>
+                <Text style={styles.text}>Classe: {item.classe}</Text>
+                <Text style={styles.penalite}>Pénalité: {item.penalite} FCFA</Text>
+              </View>
+            )}
+            left={props => <List.Icon {...props} icon="account" />}
+          />
         )}
       />
     </View>
@@ -143,6 +152,12 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 16,
     marginVertical: 2,
+  },
+  penalite: {
+    fontSize: 16,
+    marginVertical: 2,
+    color: 'red',
+    fontWeight: '600',
   },
   bold: {
     fontWeight: 'bold',

@@ -3,20 +3,53 @@ import {db} from './database';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import API_URL from '../api/urldeconnexion.js';
 import axios from 'axios';
-import {useRefresh} from './refresh.js';
 import uuid from 'react-native-uuid';
 //const API_URL = 'http://localhost:5000/api';
 
+// Verrou pour éviter les syncs concurrentes
+let syncInProgress = false;
+
+// Pause utilitaire
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Requête axios avec retry automatique sur 429 (backoff exponentiel)
+const axiosWithRetry = async (config, maxRetries = 4) => {
+  let delay = 1000;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await axios(config);
+    } catch (err) {
+      const status = err.response?.status;
+      if (status === 429 && attempt < maxRetries) {
+        const retryAfter = parseInt(err.response?.headers?.['retry-after'] || '0', 10);
+        const waitMs = retryAfter > 0 ? retryAfter * 1000 : delay;
+        console.warn(`⏳ 429 reçu (tentative ${attempt + 1}/${maxRetries}), attente ${waitMs}ms...`);
+        await sleep(waitMs);
+        delay = Math.min(delay * 2, 30000);
+      } else {
+        throw err;
+      }
+    }
+  }
+};
+
 // Fonction de synchronisation conditionnelle
 export const checkAndSync = async isConnected => {
-  if (isConnected) {
-    console.log(
-      'Connexion détectée, synchronisation en cours(je suis chackAndSync)...',
-    );
+  if (!isConnected) {
+    console.log('Pas de connexion, en attente...');
+    return;
+  }
+  if (syncInProgress) {
+    console.log('🔒 Sync déjà en cours, ignorée.');
+    return;
+  }
+  syncInProgress = true;
+  try {
+    console.log('Connexion détectée, synchronisation en cours(je suis chackAndSync)...');
     await syncLocalToServer();
     await syncServerToLocal();
-  } else {
-    console.log('Pas de connexion, en attente...');
+  } finally {
+    syncInProgress = false;
   }
 };
 
@@ -91,35 +124,45 @@ export const syncLocalToServer = async () => {
               }),
             );
 
-            // Envoi des logs au serveur
-            const syncPromises = logsWithUUID.map(log =>
-              axios
-                .post(`${API_URL}syncslogs`, JSON.stringify([log]), {
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                })
-                .then(response => {
-                  if (response.status >= 200 && response.status < 300) {
-                    console.log(`✅ Log #${log.id} synchronisé.`);
-                    return {status: 'fulfilled', id: log.id};
-                  } else {
-                    console.warn(
-                      `⚠️ Log #${log.id} rejeté : HTTP ${response.status}`,
-                    );
-                    return {status: 'rejected', id: log.id};
-                  }
-                })
-                .catch(err => {
-                  console.error(`❌ Log #${log.id} échec : ${err.message}`);
-                  return {status: 'rejected', id: log.id};
-                }),
-            );
+            // Envoi séquentiel des logs (évite le 429 par flood de requêtes)
+            const idsToDelete = [];
+            for (const log of logsWithUUID) {
+              try {
+                const response = await axiosWithRetry({
+                  method: 'post',
+                  url: `${API_URL}syncslogs`,
+                  data: JSON.stringify([log]),
+                  headers: {'Content-Type': 'application/json'},
+                });
 
-            const resultsSettled = await Promise.allSettled(syncPromises);
-            const idsToDelete = resultsSettled
-              .filter(r => r.value && r.value.status === 'fulfilled')
-              .map(r => r.value.id);
+                console.log(
+                  `🔁 Réponse serveur pour log #${log.id}:`,
+                  response.status,
+                  response.data,
+                );
+
+                const msg =
+                  response?.data && typeof response.data.message === 'string'
+                    ? response.data.message
+                    : null;
+
+                // Si le serveur indique explicitement "0 actions", on ne supprime pas le log.
+                if (msg && msg.includes('0 actions')) {
+                  console.warn(`⚠️ Log #${log.id} non appliqué côté serveur (0 actions).`);
+                } else if (response.status >= 200 && response.status < 300) {
+                  console.log(`✅ Log #${log.id} synchronisé.`);
+                  idsToDelete.push(log.id);
+                } else {
+                  console.warn(`⚠️ Log #${log.id} rejeté : HTTP ${response.status}`);
+                }
+              } catch (err) {
+                if (err.response) {
+                  console.error(`❌ Log #${log.id} échec HTTP ${err.response.status}:`, err.response.data);
+                } else {
+                  console.error(`❌ Log #${log.id} échec : ${err.message}`);
+                }
+              }
+            }
 
             if (idsToDelete.length === 0) {
               console.log('🟡 Aucun log supprimé.');
@@ -216,7 +259,7 @@ export const syncServerToLocal = async () => {
   };
 
   try {
-    const response = await axios.get(`${API_URL}synclogs/${lastSync}`);
+    const response = await axiosWithRetry({method: 'get', url: `${API_URL}synclogs/${lastSync}`});
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`Erreur HTTP: ${response.status}`);
     }
